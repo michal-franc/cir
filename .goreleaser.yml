@@ -1,0 +1,23 @@
+before:
+  hooks:
+    - go generate ./cmd/cir
+builds:
+  - goos:
+      - linux
+      - windows
+    goarch:
+      - amd64
+    ldflags:
+      - -X 'github.com/michal-franc/cir/internal/app/cir/commands.Version={{.Env.VERSION}}'
+    binary: cir
+    main: ./cmd/cir/main.go
+checksum:
+  name_template: 'checksums.txt'
+snapshot:
+  name_template: "{{ .Tag }}-next"
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
