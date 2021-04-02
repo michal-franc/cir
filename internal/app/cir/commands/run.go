@@ -45,7 +45,7 @@ var startCmd = &cobra.Command{
 
 		ipFrom := net.ParseIP(fromIp)
 		ipTo := net.ParseIP(toIp)
-		fmt.Printf("checking if %s can reach %s on port %d\n", ipFrom.String(), ipTo.String(), port)
+		fmt.Printf("checking if '%s' can reach '%s on port '%d'\n", ipFrom.String(), ipTo.String(), port)
 
 		ec2Svc := ec2.NewFromConfig(cfg)
 		ec2InstanceFrom, err := findEC2ByPrivateIp(ipFrom.String(), ec2Svc)
@@ -329,5 +329,11 @@ func findEC2ByPrivateIp(privateIp string, client *ec2.Client) (*types.Instance, 
 	}
 
 	//TODO: what if we get more reservations or isntances?
+	if len(ec2result.Reservations) <= 0 {
+		return nil, fmt.Errorf("ec2 with ip '%s' not found", privateIp)
+	}
+	if len(ec2result.Reservations[0].Instances) <= 0 {
+		return nil, fmt.Errorf("ec2 with ip '%s' not found", privateIp)
+	}
 	return &ec2result.Reservations[0].Instances[0], nil
 }

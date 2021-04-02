@@ -20,4 +20,5 @@ IDEAS:
 //TODO: cir ec2.aws -> if 0.0.0.0/0 disabled - check for vpc endpoint if yes -> yes
 //TODO: private links
 //TODO: aws gcp azure - across boundaries
+//TODO: if one ec2 not found then do analysis for only one side
 ```
