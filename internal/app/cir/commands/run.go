@@ -2,6 +2,7 @@ package commands
 
 import (
 	"github.com/spf13/cobra"
+	"strings"
 
 	"context"
 	"fmt"
@@ -16,13 +17,13 @@ import (
 
 var fromIp string
 var toIp string
-var portTo int32
+var port int32
 var debug bool
 
 func init() {
 	startCmd.Flags().StringVar(&fromIp, "from", "", "Specifies which machine the communication is initiated from.")
 	startCmd.Flags().StringVar(&toIp, "to", "", "Specifies which machine the communication is destined to go to.")
-	startCmd.Flags().Int32Var(&portTo, "port", -1, "Specifies which port should be checked.")
+	startCmd.Flags().Int32Var(&port, "port", -1, "Specifies which port should be checked.")
 	startCmd.Flags().BoolVar(&debug, "debug", false, "Specifies if debug messages should be emitted.")
 	rootCmd.AddCommand(startCmd)
 }
@@ -31,6 +32,7 @@ var startCmd = &cobra.Command{
 	Use:   "run",
 	Short: "run analysis",
 	Run: func(cmd *cobra.Command, args []string) {
+		log.SetLevel(log.WarnLevel)
 
 		if debug {
 			log.SetLevel(log.DebugLevel)
@@ -43,28 +45,39 @@ var startCmd = &cobra.Command{
 
 		ipFrom := net.ParseIP(fromIp)
 		ipTo := net.ParseIP(toIp)
-		port := portTo
-		fmt.Printf("checking if %s can reach %s\n", ipFrom.String(), ipTo.String())
+		fmt.Printf("checking if %s can reach %s on port %d\n", ipFrom.String(), ipTo.String(), port)
 
 		ec2Svc := ec2.NewFromConfig(cfg)
-		ec2Instance, err := findEC2ByPrivateIp(ipFrom.String(), ec2Svc)
+		ec2InstanceFrom, err := findEC2ByPrivateIp(ipFrom.String(), ec2Svc)
 		if err != nil {
 			log.Fatalf("%s", err)
 		}
 
-		securityGroups, err := getSecurityGroupsById(ec2Instance, err, ec2Svc)
+		ec2InstanceTo, err := findEC2ByPrivateIp(ipTo.String(), ec2Svc)
 		if err != nil {
 			log.Fatalf("%s", err)
 		}
 
-		tml.Printf("<yellow>%s</yellow>\n", *ec2Instance.VpcId)
+		tml.Printf("<yellow>%s</yellow>\n", *ec2InstanceTo.VpcId)
+		securityGroupsTo, err := getSecurityGroupsById(ec2InstanceTo, err, ec2Svc)
+		if err != nil {
+			log.Fatalf("%s", err)
+		}
+
+		securityGroupsFrom, err := getSecurityGroupsById(ec2InstanceFrom, err, ec2Svc)
+		if err != nil {
+			log.Fatalf("%s", err)
+		}
+
+		tml.Printf("<yellow>%s</yellow>\n", *ec2InstanceFrom.VpcId)
 
 		//TODO: if len security groups <-0 then just fail straight away
-		securityGroup := (*securityGroups)[0]
+		securityGroupFrom := (*securityGroupsFrom)[0]
+		securityGroupTo := (*securityGroupsTo)[0]
 
-		canEscapeEc2 := checkIfSecurityGroupAllowsEgressForIPandPort(securityGroup, port, ipTo)
+		canEscapeEc2 := checkIfSecurityGroupAllowsEgressForIPandPort(securityGroupFrom, *securityGroupTo.GroupId, port, ipTo)
 		if canEscapeEc2 {
-			tml.Printf("<green>✓</green> ec2 -> %s\n", *securityGroup.GroupId)
+			tml.Printf("<green>✓</green> ec2 -> %s\n", *securityGroupFrom.GroupId)
 		} else {
 			tml.Println("<red>×</red> ec2")
 		}
@@ -73,10 +86,10 @@ var startCmd = &cobra.Command{
 		//if private we need to check if its the same VPC
 		//if its diff vpc we need to check if peering is active
 		//it might also go through TGW
-		canEscapeSubnet, route := lookForRouteOutsideSubnet(ec2Instance, ec2Svc, ipTo)
+		canEscapeSubnet, route := lookForRouteOutsideSubnet(ec2InstanceFrom, ec2Svc, ipTo)
 
 		if canEscapeSubnet {
-			tml.Printf("<green>✓</green> subnet '%s' -> route opened '%s'\n", *ec2Instance.SubnetId, *route.DestinationCidrBlock)
+			tml.Printf("<green>✓</green> subnet '%s' -> route opened '%s'\n", *ec2InstanceFrom.SubnetId, *route.DestinationCidrBlock)
 		} else {
 			tml.Println("<red>×</red> subnet - route table")
 		}
@@ -122,21 +135,9 @@ var startCmd = &cobra.Command{
 			}
 		}
 
-		ec2InstanceTo, err := findEC2ByPrivateIp(ipTo.String(), ec2Svc)
-		if err != nil {
-			log.Fatalf("%s", err)
-		}
-
-		tml.Printf("<yellow>%s</yellow>\n", *ec2InstanceTo.VpcId)
-		securityGroupsTo, err := getSecurityGroupsById(ec2InstanceTo, err, ec2Svc)
-		if err != nil {
-			log.Fatalf("%s", err)
-		}
-
-		securityGroupTo := (*securityGroupsTo)[0]
-		canEnterEc2 := checkIfSecurityGroupAllowsIngressForIPandPort(securityGroupTo, port, ipFrom)
+		canEnterEc2 := checkIfSecurityGroupAllowsIngressForIPandPort(securityGroupTo, *securityGroupFrom.GroupId, port, ipFrom)
 		if canEnterEc2 {
-			tml.Printf("<green>✓</green> -> ec2 %s\n", *securityGroup.GroupId)
+			tml.Printf("<green>✓</green> -> ec2 %s\n", *securityGroupFrom.GroupId)
 		} else {
 			tml.Println("<red>×</red> -> ec2")
 		}
@@ -185,16 +186,43 @@ func lookForRouteOutsideSubnet(ec2Instance *types.Instance, ec2Svc *ec2.Client, 
 }
 
 //TODO: return err and add in proper error handling
-func checkIfSecurityGroupAllowsIngressForIPandPort(securityGroup types.SecurityGroup, port int32, ipFrom net.IP) bool {
+func checkIfSecurityGroupAllowsIngressForIPandPort(securityGroupTo types.SecurityGroup, securityGroupFromId string, port int32, ipFrom net.IP) bool {
 	canEnterEc2 := false
-	log.Debug("Checking security group egress")
+	log.Debugf("Checking security group ingress - %s\n", *securityGroupTo.GroupId)
 	//TODO: todo if port not specified create a list of ports that would be able to be sent through
-	for _, ingress := range securityGroup.IpPermissions {
-		//log.Debugf("checking ingress rule %s", ToStringIpPermission(egress))
-		//TODO: check if required port qualifies for this entry
-		if ingress.FromPort >= port && port <= ingress.ToPort {
-			//TODO: this can be security group or a single ip not always cidr
+	for _, ingress := range securityGroupTo.IpPermissions {
+		if port >= ingress.FromPort && port <= ingress.ToPort {
+			log.Debugf("found port opening %s", ToStringIpPermission(ingress))
+			if len(ingress.Ipv6Ranges) > 0 {
+				log.Warn("IPV6 is not supported yet.")
+			}
+
+			if len(ingress.PrefixListIds) > 0 {
+				log.Warn("Prefixes are not supported yet.")
+			}
+
+			if *ingress.IpProtocol != "" {
+				log.Warn("IpProtocol is not supported yet.")
+			}
+
+			// User ids cover sestinations like security group
+			log.Debugf("user ids %d", len(ingress.UserIdGroupPairs))
+			if len(ingress.UserIdGroupPairs) > 0 {
+				for _, userIdGroup := range ingress.UserIdGroupPairs {
+					log.Debugf("group id %s", *userIdGroup.GroupId)
+					// check if this group id is security group
+					if strings.HasPrefix(*userIdGroup.GroupId, "sg-") {
+						if strings.EqualFold(*userIdGroup.GroupId, securityGroupFromId) {
+							return true
+						}
+					}
+				}
+			}
+
+			// IP ranges cover only hardcoded cidr values
+			log.Debugf("ipranges ipv4 %d", len(ingress.IpRanges))
 			for _, ipRange := range ingress.IpRanges {
+				log.Debugf("Checking if security group with '%s'\n", *ipRange.CidrIp)
 				_, cidr, err := net.ParseCIDR(*ipRange.CidrIp)
 				if err != nil {
 					log.Fatalf("%s", err)
@@ -210,16 +238,43 @@ func checkIfSecurityGroupAllowsIngressForIPandPort(securityGroup types.SecurityG
 }
 
 //TODO: return err and add in proper error handling
-func checkIfSecurityGroupAllowsEgressForIPandPort(securityGroup types.SecurityGroup, port int32, ipTo net.IP) bool {
+func checkIfSecurityGroupAllowsEgressForIPandPort(securityGroupFrom types.SecurityGroup, securityGroupToId string, port int32, ipTo net.IP) bool {
 	canEscapeEc2 := false
-	log.Debug("Checking security group egress")
+	log.Debugf("Checking security group egress - %s\n", *securityGroupFrom.GroupId)
 	//TODO: todo if port not specified create a list of ports that would be able to be sent through
-	for _, egress := range securityGroup.IpPermissionsEgress {
-		//log.Debugf("checking ingress rule %s", ToStringIpPermission(egress))
-		//TODO: check if required port qualifies for this entry
-		if egress.FromPort >= port && port <= egress.ToPort {
-			//TODO: this can be security group or a single ip not always cidr
+	for _, egress := range securityGroupFrom.IpPermissionsEgress {
+		if port >= egress.FromPort && port <= egress.ToPort {
+			log.Debugf("found port opening %s", ToStringIpPermission(egress))
+			if len(egress.Ipv6Ranges) > 0 {
+				log.Warn("IPV6 is not supported yet.")
+			}
+
+			if len(egress.PrefixListIds) > 0 {
+				log.Warn("Prefixes are not supported yet.")
+			}
+
+			if *egress.IpProtocol != "" {
+				log.Warn("IpProtocol is not supported yet.")
+			}
+
+			// User ids cover sestinations like security group
+			log.Debugf("user ids %d", len(egress.UserIdGroupPairs))
+			if len(egress.UserIdGroupPairs) > 0 {
+				for _, userIdGroup := range egress.UserIdGroupPairs {
+					log.Debugf("group id %s", *userIdGroup.GroupId)
+					// check if this group id is security group
+					if strings.HasPrefix(*userIdGroup.GroupId, "sg-") {
+						if strings.EqualFold(*userIdGroup.GroupId, securityGroupToId) {
+							return true
+						}
+					}
+				}
+			}
+
+			// IP ranges cover only hardcoded cidr values
+			log.Debugf("ipranges ipv4 %d", len(egress.IpRanges))
 			for _, ipRange := range egress.IpRanges {
+				log.Debugf("Checking if security group with '%s'\n", *ipRange.CidrIp)
 				_, cidr, err := net.ParseCIDR(*ipRange.CidrIp)
 				if err != nil {
 					log.Fatalf("%s", err)
