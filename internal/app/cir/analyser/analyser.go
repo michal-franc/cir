@@ -53,9 +53,8 @@ func RunAnalysis(data scanner.AwsData, client *ec2.Client, port int32) (*Analysi
 	if !analysis.AreInTheSameVpc {
 		valid, reason := checkIfVPCConnectionValid(routeSource, routeDestination)
 		analysis.ConnectionBetweenVPCsIsValid = valid
-		if !valid {
-			analysis.ConnectionBetweenVPCsIsValidReason = reason
-		} else {
+		analysis.ConnectionBetweenVPCsIsValidReason = reason
+		if valid {
 			analysis.ConnectionBetweenVPCsIsActive = checkIfVPCConnectionIsActive(routeSource, client)
 		}
 	}
@@ -185,6 +184,7 @@ func lookForRouteOutsideSubnet(routeTable *types.RouteTable, ipDestination net.I
 func checkIfSecurityGroupAllowsIngressForIPandPort(securityGroupTo types.SecurityGroup, securityGroupFromId string, port int32, ipFrom net.IP) bool {
 	canEnterEc2 := false
 	log.Debugf("Checking security group ingress - %s\n", *securityGroupTo.GroupId)
+	//TODO: check ip protocol udp vs tcp
 	//TODO: todo if port not specified create a list of ports that would be able to be sent through
 	for _, ingress := range securityGroupTo.IpPermissions {
 		if port >= ingress.FromPort && port <= ingress.ToPort {
@@ -196,11 +196,6 @@ func checkIfSecurityGroupAllowsIngressForIPandPort(securityGroupTo types.Securit
 			if len(ingress.PrefixListIds) > 0 {
 				log.Warn("Prefixes are not supported yet.")
 			}
-
-			if *ingress.IpProtocol != "" {
-				log.Warn("IpProtocol is not supported yet.")
-			}
-
 			// User ids cover sestinations like security group
 			log.Debugf("user ids %d", len(ingress.UserIdGroupPairs))
 			if len(ingress.UserIdGroupPairs) > 0 {
@@ -211,6 +206,8 @@ func checkIfSecurityGroupAllowsIngressForIPandPort(securityGroupTo types.Securit
 						if strings.EqualFold(*userIdGroup.GroupId, securityGroupFromId) {
 							return true
 						}
+					} else {
+						log.Warnf("security group userIDgroup not supported - %s", *userIdGroup.GroupId)
 					}
 				}
 			}
@@ -237,6 +234,7 @@ func checkIfSecurityGroupAllowsIngressForIPandPort(securityGroupTo types.Securit
 func checkIfSecurityGroupAllowsEgressForIPandPort(securityGroupFrom types.SecurityGroup, securityGroupToId string, port int32, ipDestination net.IP) bool {
 	canEscapeEc2 := false
 	log.Debugf("Checking security group egress - %s\n", *securityGroupFrom.GroupId)
+	//TODO: check ip protocol udp vs tcp
 	//TODO: todo if port not specified create a list of ports that would be able to be sent through
 	for _, egress := range securityGroupFrom.IpPermissionsEgress {
 		if port >= egress.FromPort && port <= egress.ToPort {
@@ -249,10 +247,6 @@ func checkIfSecurityGroupAllowsEgressForIPandPort(securityGroupFrom types.Securi
 				log.Warn("Prefixes are not supported yet.")
 			}
 
-			if *egress.IpProtocol != "" {
-				log.Warn("IpProtocol is not supported yet.")
-			}
-
 			// User ids cover sestinations like security group
 			log.Debugf("user ids %d", len(egress.UserIdGroupPairs))
 			if len(egress.UserIdGroupPairs) > 0 {
@@ -263,6 +257,8 @@ func checkIfSecurityGroupAllowsEgressForIPandPort(securityGroupFrom types.Securi
 						if strings.EqualFold(*userIdGroup.GroupId, securityGroupToId) {
 							return true
 						}
+					} else {
+						log.Warnf("security group userIDgroup not supported - %s", *userIdGroup.GroupId)
 					}
 				}
 			}
