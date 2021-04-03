@@ -9,62 +9,59 @@ import (
 )
 
 type ResourceMetaData struct {
+	PrivateIp     string
 	VpcId         string
 	SecurityGroup types.SecurityGroup
 	SubnetId      string
 	RouteTable    types.RouteTable
 }
 
-type Analysis struct {
-	CanEscapeSource               bool
-	CanEnterDestination           bool
-	SourceSubnetHasRoute          bool
-	DestinationSubnetHasRoute     bool
-	ConnectionBetweenVPCsIsActive bool
-
+type AwsData struct {
 	Source      *ResourceMetaData
 	Destination *ResourceMetaData
 }
 
-func ScanAwsEc2(client *ec2.Client, sourceIp string, destinationIp string) (*Analysis, error) {
+func ScanAwsEc2(client *ec2.Client, sourceIp string, destinationIp string) (*AwsData, error) {
 	ec2InstanceSource, err := findEC2ByPrivateIp(sourceIp, client)
 	if err != nil {
-		return &Analysis{}, err
+		return &AwsData{}, err
 	}
 
 	ec2InstanceDestination, err := findEC2ByPrivateIp(destinationIp, client)
 	if err != nil {
-		return &Analysis{}, err
+		return &AwsData{}, err
 	}
 
 	securityGroupsDestination, err := getSecurityGroupsById(ec2InstanceDestination, client)
 	if err != nil {
-		return &Analysis{}, err
+		return &AwsData{}, err
 	}
 
 	securityGroupsSource, err := getSecurityGroupsById(ec2InstanceSource, client)
 	if err != nil {
-		return &Analysis{}, err
+		return &AwsData{}, err
 	}
 
 	routeTableSource, err := getRouteTablesForEc2(ec2InstanceSource, client)
 	if err != nil {
-		return &Analysis{}, err
+		return &AwsData{}, err
 	}
 
 	routeTableDestination, err := getRouteTablesForEc2(ec2InstanceSource, client)
 	if err != nil {
-		return &Analysis{}, err
+		return &AwsData{}, err
 	}
 
-	return &Analysis{
+	return &AwsData{
 		Source: &ResourceMetaData{
+			PrivateIp:     *ec2InstanceSource.PrivateIpAddress,
 			SecurityGroup: (*securityGroupsSource)[0],
 			VpcId:         *ec2InstanceSource.VpcId,
 			SubnetId:      *ec2InstanceSource.SubnetId,
 			RouteTable:    *routeTableSource,
 		},
 		Destination: &ResourceMetaData{
+			PrivateIp:     *ec2InstanceDestination.PrivateIpAddress,
 			SecurityGroup: (*securityGroupsDestination)[0],
 			VpcId:         *ec2InstanceDestination.VpcId,
 			SubnetId:      *ec2InstanceDestination.SubnetId,
