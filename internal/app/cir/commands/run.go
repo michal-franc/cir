@@ -13,74 +13,8 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/liamg/tml"
+	"github.com/michal-franc/cir/internal/app/cir/scanner"
 )
-
-type ResourceMetaData struct {
-	VpcId         string
-	SecurityGroup types.SecurityGroup
-	SubnetId      string
-	RouteTable    types.RouteTable
-}
-
-type Analysis struct {
-	CanEscapeSource               bool
-	CanEnterDestination           bool
-	SourceSubnetHasRoute          bool
-	DestinationSubnetHasRoute     bool
-	ConnectionBetweenVPCsIsActive bool
-
-	Source      *ResourceMetaData
-	Destination *ResourceMetaData
-}
-
-// 1. Scan Data
-
-func ScanAwsEc2(client *ec2.Client, sourceIp string, destinationIp string) (*Analysis, error) {
-	ec2InstanceSource, err := findEC2ByPrivateIp(sourceIp, client)
-	if err != nil {
-		return &Analysis{}, err
-	}
-
-	ec2InstanceDestination, err := findEC2ByPrivateIp(destinationIp, client)
-	if err != nil {
-		return &Analysis{}, err
-	}
-
-	securityGroupsDestination, err := getSecurityGroupsById(ec2InstanceDestination, client)
-	if err != nil {
-		return &Analysis{}, err
-	}
-
-	securityGroupsSource, err := getSecurityGroupsById(ec2InstanceSource, client)
-	if err != nil {
-		return &Analysis{}, err
-	}
-
-	routeTableSource, err := getRouteTablesForEc2(ec2InstanceSource, client)
-	if err != nil {
-		return &Analysis{}, err
-	}
-
-	routeTableDestination, err := getRouteTablesForEc2(ec2InstanceSource, client)
-	if err != nil {
-		return &Analysis{}, err
-	}
-
-	return &Analysis{
-		Source: &ResourceMetaData{
-			SecurityGroup: (*securityGroupsSource)[0],
-			VpcId:         *ec2InstanceSource.VpcId,
-			SubnetId:      *ec2InstanceSource.SubnetId,
-			RouteTable:    *routeTableSource,
-		},
-		Destination: &ResourceMetaData{
-			SecurityGroup: (*securityGroupsDestination)[0],
-			VpcId:         *ec2InstanceDestination.VpcId,
-			SubnetId:      *ec2InstanceDestination.SubnetId,
-			RouteTable:    *routeTableDestination,
-		},
-	}, nil
-}
 
 // 2. Run analysis
 
@@ -117,7 +51,7 @@ var startCmd = &cobra.Command{
 		fmt.Printf("checking if '%s' can reach '%s on port '%d'\n", ipSource.String(), ipDestination.String(), port)
 
 		ec2Svc := ec2.NewFromConfig(cfg)
-		analysis, err := ScanAwsEc2(ec2Svc, ipSource.String(), ipDestination.String())
+		analysis, err := scanner.ScanAwsEc2(ec2Svc, ipSource.String(), ipDestination.String())
 		if err != nil {
 			log.Fatalf("Error when scannning AWS account - %s", err)
 		}
@@ -189,27 +123,6 @@ var startCmd = &cobra.Command{
 			tml.Println("<red>×</red> -> ec2")
 		}
 	},
-}
-
-func getRouteTablesForEc2(ec2Instance *types.Instance, ec2Svc *ec2.Client) (*types.RouteTable, error) {
-	log.Debug("Checking subnet routing table")
-	filterSubnetId := "association.subnet-id"
-	routeTableQuery := &ec2.DescribeRouteTablesInput{
-		Filters: []types.Filter{
-			{
-				Name:   &filterSubnetId,
-				Values: []string{*ec2Instance.SubnetId},
-			},
-		},
-	}
-
-	routeTables, _ := ec2Svc.DescribeRouteTables(context.Background(), routeTableQuery)
-
-	//TODO: handle many route tables
-	if len(routeTables.RouteTables) <= 0 {
-		return nil, fmt.Errorf("no route table found for ec2 with ip '%s'", *ec2Instance.PrivateIpAddress)
-	}
-	return &routeTables.RouteTables[0], nil
 }
 
 //TODO: proper error handling
@@ -343,59 +256,6 @@ func checkIfSecurityGroupAllowsEgressForIPandPort(securityGroupFrom types.Securi
 	return canEscapeEc2
 }
 
-func getSecurityGroupsById(ec2Instance *types.Instance, ec2Svc *ec2.Client) (*[]types.SecurityGroup, error) {
-	//TODO: consider multiple security groups
-	groupId := ec2Instance.SecurityGroups[0].GroupId
-
-	securityGroupQuery := &ec2.DescribeSecurityGroupsInput{
-		GroupIds: []string{*groupId},
-	}
-	log.Debug("looking for security group")
-	securityGroupsResult, err := ec2Svc.DescribeSecurityGroups(context.Background(), securityGroupQuery)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(securityGroupsResult.SecurityGroups) <= 0 {
-		return nil, fmt.Errorf("security group for ec2:%s not found", *ec2Instance.InstanceId)
-	}
-
-	return &securityGroupsResult.SecurityGroups, nil
-}
-
 func ToStringIpPermission(ip types.IpPermission) string {
 	return fmt.Sprintf("%s %d-%d", *ip.IpProtocol, ip.FromPort, ip.ToPort)
-}
-
-func findEC2ByPrivateIp(privateIp string, client *ec2.Client) (*types.Instance, error) {
-	log.Debugf("Looking for EC2 with private ip: '%s'", privateIp)
-	filterName := "network-interface.addresses.private-ip-address"
-	query := &ec2.DescribeInstancesInput{
-		Filters: []types.Filter{
-			{
-				Name:   &filterName,
-				Values: []string{privateIp},
-			},
-		},
-	}
-
-	ec2result, err := client.DescribeInstances(context.Background(), query)
-
-	if err != nil {
-		return &types.Instance{}, fmt.Errorf("error when looking for ec2 %s", err)
-	}
-
-	//TODO: what if we get more reservations or isntances?
-	if len(ec2result.Reservations) <= 0 {
-		return nil, fmt.Errorf("ec2 with ip '%s' not found", privateIp)
-	}
-	if len(ec2result.Reservations[0].Instances) <= 0 {
-		return nil, fmt.Errorf("ec2 with ip '%s' not found", privateIp)
-	}
-
-	if len(ec2result.Reservations[0].Instances) > 1 {
-		return nil, fmt.Errorf("multiple ec2 found for given ip '%s'", privateIp)
-	}
-
-	return &ec2result.Reservations[0].Instances[0], nil
 }
