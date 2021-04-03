@@ -11,17 +11,21 @@ import (
 	"strings"
 )
 
+type Check struct {
+	IsPassing bool
+	Reason    string
+}
+
 type Analysis struct {
 	//TODO: single quick response for non verbose display
-	CanTheyConnect                     bool
-	CanEscapeSource                    bool
-	CanEnterDestination                bool
-	SourceSubnetHasRoute               bool
-	DestinationSubnetHasRoute          bool
-	AreInTheSameVpc                    bool
-	ConnectionBetweenVPCsIsValid       bool
-	ConnectionBetweenVPCsIsValidReason string
-	ConnectionBetweenVPCsIsActive      bool
+	CanTheyConnect                bool
+	CanEscapeSource               *Check
+	CanEnterDestination           *Check
+	SourceSubnetHasRoute          *Check
+	DestinationSubnetHasRoute     *Check
+	AreInTheSameVpc               bool
+	ConnectionBetweenVPCsIsValid  *Check
+	ConnectionBetweenVPCsIsActive *Check
 }
 
 func toStringIpPermission(ip types.IpPermission) string {
@@ -32,8 +36,7 @@ func RunAnalysis(data scanner.AwsData, client *ec2.Client, port int32) (*Analysi
 	ipDestination := net.ParseIP(data.Destination.PrivateIp)
 	ipSource := net.ParseIP(data.Source.PrivateIp)
 	analysis := &Analysis{}
-	canEscapeSource := checkIfSecurityGroupAllowsEgressForIPandPort(data.Source.SecurityGroup, *data.Destination.SecurityGroup.GroupId, port, ipDestination)
-	analysis.CanEscapeSource = canEscapeSource
+	analysis.CanEscapeSource = checkIfSecurityGroupAllowsEgressForIPandPort(data.Source.SecurityGroup, *data.Destination.SecurityGroup.GroupId, port, ipDestination)
 
 	//TODO: but here we can escape through private or public internet
 	//if private we need to check if its the same VPC
@@ -42,8 +45,7 @@ func RunAnalysis(data scanner.AwsData, client *ec2.Client, port int32) (*Analysi
 	canEscapeSourceSubnet, routeSource := lookForRouteOutsideSubnet(&data.Source.RouteTable, ipDestination)
 	analysis.SourceSubnetHasRoute = canEscapeSourceSubnet
 
-	canEnterDestination := checkIfSecurityGroupAllowsIngressForIPandPort(data.Destination.SecurityGroup, *data.Source.SecurityGroup.GroupId, port, ipSource)
-	analysis.CanEnterDestination = canEnterDestination
+	analysis.CanEnterDestination = checkIfSecurityGroupAllowsIngressForIPandPort(data.Destination.SecurityGroup, *data.Source.SecurityGroup.GroupId, port, ipSource)
 
 	canEscapeDestinationSubnet, routeDestination := lookForRouteOutsideSubnet(&data.Source.RouteTable, ipDestination)
 	analysis.DestinationSubnetHasRoute = canEscapeDestinationSubnet
@@ -51,10 +53,8 @@ func RunAnalysis(data scanner.AwsData, client *ec2.Client, port int32) (*Analysi
 	analysis.AreInTheSameVpc = data.Destination.VpcId == data.Source.VpcId
 
 	if !analysis.AreInTheSameVpc {
-		valid, reason := checkIfVPCConnectionValid(routeSource, routeDestination)
-		analysis.ConnectionBetweenVPCsIsValid = valid
-		analysis.ConnectionBetweenVPCsIsValidReason = reason
-		if valid {
+		analysis.ConnectionBetweenVPCsIsValid = checkIfVPCConnectionValid(routeSource, routeDestination)
+		if analysis.ConnectionBetweenVPCsIsValid.IsPassing {
 			analysis.ConnectionBetweenVPCsIsActive = checkIfVPCConnectionIsActive(routeSource, client)
 		}
 	}
@@ -64,7 +64,7 @@ func RunAnalysis(data scanner.AwsData, client *ec2.Client, port int32) (*Analysi
 
 //TODO: error handling instead of fatals
 //TODO: reason
-func checkIfVPCConnectionIsActive(routeSource *types.Route, client *ec2.Client) bool {
+func checkIfVPCConnectionIsActive(routeSource *types.Route, client *ec2.Client) *Check {
 	if routeSource.VpcPeeringConnectionId != nil {
 		vpcQuery := &ec2.DescribeVpcPeeringConnectionsInput{
 			VpcPeeringConnectionIds: []string{*routeSource.VpcPeeringConnectionId},
@@ -79,7 +79,15 @@ func checkIfVPCConnectionIsActive(routeSource *types.Route, client *ec2.Client) 
 		//TODO: more than one vpc
 		vpcPeeringStatus := vpcs.VpcPeeringConnections[0].Status
 		if vpcPeeringStatus.Code == types.VpcPeeringConnectionStateReasonCodeActive {
-			return true
+			return &Check{
+				IsPassing: true,
+				Reason:    fmt.Sprintf("vpc peering - %s - is active", *vpcs.VpcPeeringConnections[0].VpcPeeringConnectionId),
+			}
+		} else {
+			return &Check{
+				IsPassing: false,
+				Reason:    fmt.Sprintf("vpc peering - %s - is inactive", *vpcs.VpcPeeringConnections[0].VpcPeeringConnectionId),
+			}
 		}
 	}
 
@@ -98,66 +106,76 @@ func checkIfVPCConnectionIsActive(routeSource *types.Route, client *ec2.Client) 
 		//TODO: more than one vpc
 		tgwState := tgws.TransitGateways[0].State
 		if tgwState == types.TransitGatewayStateAvailable {
-			return true
+			return &Check{
+				IsPassing: true,
+				Reason:    fmt.Sprintf("tgw - %s - is available", *tgws.TransitGateways[0].TransitGatewayId),
+			}
+		} else {
+			return &Check{
+				IsPassing: false,
+				Reason:    fmt.Sprintf("tgw - %s - is unavailable", *tgws.TransitGateways[0].TransitGatewayId),
+			}
 		}
 	}
 
-	return false
+	return &Check{
+		IsPassing: false,
+		Reason:    "unsupported vpc connection type",
+	}
 }
 
-func checkIfVPCConnectionValid(sourceRoute *types.Route, destRoute *types.Route) (bool, string) {
+func checkIfVPCConnectionValid(sourceRoute *types.Route, destRoute *types.Route) *Check {
 	if sourceRoute.CarrierGatewayId != nil || destRoute.CarrierGatewayId != nil {
 		log.Warn("route check: CarrierGateway not supported yet")
-		return false, "CarrierGateway not supported yet"
+		return &Check{false, "CarrierGateway not supported yet"}
 	}
 
 	if sourceRoute.EgressOnlyInternetGatewayId != nil || destRoute.EgressOnlyInternetGatewayId != nil {
 		log.Warn("route check: EgressOnlyIG not supported yet")
-		return false, "EgressOnlyIG not supported yet"
+		return &Check{false, "EgressOnlyIG not supported yet"}
 	}
 
 	if sourceRoute.GatewayId != nil || destRoute.GatewayId != nil {
 		log.Warn("route check: Gateway not supported yet")
-		return false, "Gateway not supported yet"
+		return &Check{false, "Gateway not supported yet"}
 	}
 
 	if sourceRoute.LocalGatewayId != nil || destRoute.LocalGatewayId != nil {
 		log.Warn("route check: LocalGateway not supported yet")
-		return false, "LocalGateway not supported yet"
+		return &Check{false, "LocalGateway not supported yet"}
 	}
 
 	if sourceRoute.NatGatewayId != nil || destRoute.NatGatewayId != nil {
 		log.Warn("route check: NatGateway not supported yet")
-		return false, "NatGateway not supported yet"
+		return &Check{false, "NatGateway not supported yet"}
 	}
 
 	if sourceRoute.NetworkInterfaceId != nil || destRoute.NetworkInterfaceId != nil {
 		log.Warn("route check: ENI not supported yet")
-		return false, "Eni not supported yet"
+		return &Check{false, "Eni not supported yet"}
 	}
 
 	if sourceRoute.VpcPeeringConnectionId != nil && destRoute.VpcPeeringConnectionId != nil {
 		if sourceRoute.VpcPeeringConnectionId != destRoute.VpcPeeringConnectionId {
-			return false, fmt.Sprintf("source vpc peering id: %s - doesnt match - dest vpc peering id: %s", *sourceRoute.VpcPeeringConnectionId, *destRoute.VpcPeeringConnectionId)
+			return &Check{false, fmt.Sprintf("source vpc peering id: %s - doesnt match - dest vpc peering id: %s", *sourceRoute.VpcPeeringConnectionId, *destRoute.VpcPeeringConnectionId)}
 		}
-		return true, fmt.Sprintf("source and dest connected using vpc peering: %s", *sourceRoute.VpcPeeringConnectionId)
+		return &Check{true, fmt.Sprintf("source and dest connected using vpc peering: %s", *sourceRoute.VpcPeeringConnectionId)}
 	}
 
 	if sourceRoute.TransitGatewayId != nil && destRoute.TransitGatewayId != nil {
 		if sourceRoute.TransitGatewayId != destRoute.TransitGatewayId {
-			return false, fmt.Sprintf("source tgw id: %s - doesnt match - dest tgw id: %s", *sourceRoute.TransitGatewayId, *destRoute.TransitGatewayId)
+			return &Check{false, fmt.Sprintf("source tgw id: %s - doesnt match - dest tgw id: %s", *sourceRoute.TransitGatewayId, *destRoute.TransitGatewayId)}
 		}
-		return true, fmt.Sprintf("source and dest connected using tgw: %s", *sourceRoute.TransitGatewayId)
+		return &Check{true, fmt.Sprintf("source and dest connected using tgw: %s", *sourceRoute.TransitGatewayId)}
 	}
 
-	return false, "not compatible or supported vpc connection"
+	return &Check{false, "not compatible or supported vpc connection"}
 }
 
 //TODO: proper error handling
-func lookForRouteOutsideSubnet(routeTable *types.RouteTable, ipDestination net.IP) (bool, *types.Route) {
+//TODO: ipv6 support
+func lookForRouteOutsideSubnet(routeTable *types.RouteTable, ipDestination net.IP) (*Check, *types.Route) {
 	log.Debug("Checking subnet routing table")
-	foundRoutingTable := false
-	var route types.Route
 	for _, r := range routeTable.Routes {
 		//TODO: check why dest cidr block can be nil
 		if r.DestinationCidrBlock != nil {
@@ -172,17 +190,22 @@ func lookForRouteOutsideSubnet(routeTable *types.RouteTable, ipDestination net.I
 			}
 
 			if cidr.Contains(ipDestination) {
-				foundRoutingTable = true
-				route = r
+				return &Check{
+					IsPassing: true,
+					Reason:    fmt.Sprintf("found route in route table '%s' with range '%s'", *routeTable.RouteTableId, *r.DestinationCidrBlock),
+				}, &r
 			}
 		}
 	}
-	return foundRoutingTable, &route
+	return &Check{
+		IsPassing: false,
+		Reason:    "no route found in routing table allowing traffic",
+	}, nil
 }
 
 //TODO: return err and add in proper error handling
-func checkIfSecurityGroupAllowsIngressForIPandPort(securityGroupTo types.SecurityGroup, securityGroupFromId string, port int32, ipFrom net.IP) bool {
-	canEnterEc2 := false
+//TODO: multiple rules support at the moment it returns after finding one matching
+func checkIfSecurityGroupAllowsIngressForIPandPort(securityGroupTo types.SecurityGroup, securityGroupFromId string, port int32, ipFrom net.IP) *Check {
 	log.Debugf("Checking security group ingress - %s\n", *securityGroupTo.GroupId)
 	//TODO: check ip protocol udp vs tcp
 	//TODO: todo if port not specified create a list of ports that would be able to be sent through
@@ -190,11 +213,17 @@ func checkIfSecurityGroupAllowsIngressForIPandPort(securityGroupTo types.Securit
 		if port >= ingress.FromPort && port <= ingress.ToPort {
 			log.Debugf("found port opening %s", toStringIpPermission(ingress))
 			if len(ingress.Ipv6Ranges) > 0 {
-				log.Warn("IPV6 is not supported yet.")
+				return &Check{
+					IsPassing: false,
+					Reason:    "IPV6 is not supported yet",
+				}
 			}
 
 			if len(ingress.PrefixListIds) > 0 {
-				log.Warn("Prefixes are not supported yet.")
+				return &Check{
+					IsPassing: false,
+					Reason:    "PrefixListIds are not supported yet",
+				}
 			}
 			// User ids cover sestinations like security group
 			log.Debugf("user ids %d", len(ingress.UserIdGroupPairs))
@@ -204,10 +233,16 @@ func checkIfSecurityGroupAllowsIngressForIPandPort(securityGroupTo types.Securit
 					// check if this group id is security group
 					if strings.HasPrefix(*userIdGroup.GroupId, "sg-") {
 						if strings.EqualFold(*userIdGroup.GroupId, securityGroupFromId) {
-							return true
+							return &Check{
+								IsPassing: true,
+								Reason:    fmt.Sprintf("found inbound rule pointing tu security group - %s", *userIdGroup.GroupId),
+							}
 						}
 					} else {
-						log.Warnf("security group userIDgroup not supported - %s", *userIdGroup.GroupId)
+						return &Check{
+							IsPassing: false,
+							Reason:    fmt.Sprintf("this source is not supported yet - userIdGroup %s", *userIdGroup.GroupId),
+						}
 					}
 				}
 			}
@@ -222,17 +257,23 @@ func checkIfSecurityGroupAllowsIngressForIPandPort(securityGroupTo types.Securit
 				}
 
 				if cidr.Contains(ipFrom) {
-					canEnterEc2 = true
+					return &Check{
+						IsPassing: true,
+						Reason:    fmt.Sprintf("found inbound rule pointing at ipv4 cidr range %s", *ipRange.CidrIp),
+					}
 				}
 			}
 		}
 	}
-	return canEnterEc2
+	return &Check{
+		IsPassing: false,
+		Reason:    "security groups is not allowing this traffic",
+	}
 }
 
 //TODO: return err and add in proper error handling
-func checkIfSecurityGroupAllowsEgressForIPandPort(securityGroupFrom types.SecurityGroup, securityGroupToId string, port int32, ipDestination net.IP) bool {
-	canEscapeEc2 := false
+//TODO: multiple rules support at the moment it returns after finding one matching
+func checkIfSecurityGroupAllowsEgressForIPandPort(securityGroupFrom types.SecurityGroup, securityGroupToId string, port int32, ipDestination net.IP) *Check {
 	log.Debugf("Checking security group egress - %s\n", *securityGroupFrom.GroupId)
 	//TODO: check ip protocol udp vs tcp
 	//TODO: todo if port not specified create a list of ports that would be able to be sent through
@@ -240,11 +281,17 @@ func checkIfSecurityGroupAllowsEgressForIPandPort(securityGroupFrom types.Securi
 		if port >= egress.FromPort && port <= egress.ToPort {
 			log.Debugf("found port opening %s", toStringIpPermission(egress))
 			if len(egress.Ipv6Ranges) > 0 {
-				log.Warn("IPV6 is not supported yet.")
+				return &Check{
+					IsPassing: false,
+					Reason:    "IPV6 is not supported yet",
+				}
 			}
 
 			if len(egress.PrefixListIds) > 0 {
-				log.Warn("Prefixes are not supported yet.")
+				return &Check{
+					IsPassing: false,
+					Reason:    "PrefixListIds are not supported yet",
+				}
 			}
 
 			// User ids cover sestinations like security group
@@ -255,10 +302,16 @@ func checkIfSecurityGroupAllowsEgressForIPandPort(securityGroupFrom types.Securi
 					// check if this group id is security group
 					if strings.HasPrefix(*userIdGroup.GroupId, "sg-") {
 						if strings.EqualFold(*userIdGroup.GroupId, securityGroupToId) {
-							return true
+							return &Check{
+								IsPassing: true,
+								Reason:    fmt.Sprintf("found outbound rule pointing tu security group - %s", *userIdGroup.GroupId),
+							}
 						}
 					} else {
-						log.Warnf("security group userIDgroup not supported - %s", *userIdGroup.GroupId)
+						return &Check{
+							IsPassing: false,
+							Reason:    fmt.Sprintf("this destination is not supported yet - userIdGroup %s", *userIdGroup.GroupId),
+						}
 					}
 				}
 			}
@@ -273,10 +326,17 @@ func checkIfSecurityGroupAllowsEgressForIPandPort(securityGroupFrom types.Securi
 				}
 
 				if cidr.Contains(ipDestination) {
-					canEscapeEc2 = true
+					return &Check{
+						IsPassing: true,
+						Reason:    fmt.Sprintf("found outbound rule pointing at ipv4 cidr range %s", *ipRange.CidrIp),
+					}
 				}
 			}
 		}
 	}
-	return canEscapeEc2
+
+	return &Check{
+		IsPassing: false,
+		Reason:    "security groups is not allowing this traffic",
+	}
 }

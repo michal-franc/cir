@@ -13,6 +13,22 @@ import (
 // v -> route - there is a route from source in route table (id) -> (cidr range or id of gateway)
 // v -> sg - there is inboud rule for destination (ip)
 
+func printRedGreen(b bool, positive string, negative string) {
+	if b {
+		tml.Printf("<green>✓</green> -> %s\n", positive)
+	} else {
+		tml.Printf("<red>×</red> -> %s\n", negative)
+	}
+}
+
+func printCheck(c analyser.Check) {
+	if c.IsPassing {
+		tml.Printf("<green>✓</green> -> %s\n", c.Reason)
+	} else {
+		tml.Printf("<red>×</red> -> %s\n", c.Reason)
+	}
+}
+
 func PrintAnalysis(analysis analyser.Analysis) {
 	if analysis.AreInTheSameVpc {
 		tml.Println("(same vpc)")
@@ -20,35 +36,14 @@ func PrintAnalysis(analysis analyser.Analysis) {
 		tml.Println("(different vpcs)")
 	}
 
-	if analysis.CanEscapeSource {
-		tml.Println("<green>✓</green> -> sg - there is an outbound rule for source")
-	} else {
-		tml.Println("<red>×</red> -> sg - there is no outbound rule for source")
-	}
-
-	if analysis.SourceSubnetHasRoute {
-		tml.Println("<green>✓</green> -> route - there is a route to destination in route table")
-	} else {
-		tml.Println("<red>×</red> -> route - there is no route to destination in route table")
-	}
+	printCheck(*analysis.CanEscapeSource)
+	printCheck(*analysis.SourceSubnetHasRoute)
 
 	if !analysis.AreInTheSameVpc {
-		if analysis.ConnectionBetweenVPCsIsValid {
-			tml.Printf("<green>✓</green> -> %s\n", analysis.ConnectionBetweenVPCsIsValidReason)
-		} else {
-			tml.Println("<red>×</red> -> %s\\n\", analysis.ConnectionBetweenVPCsIsValidReason")
-		}
+		printCheck(*analysis.ConnectionBetweenVPCsIsValid)
+		printCheck(*analysis.ConnectionBetweenVPCsIsActive)
 	}
 
-	if analysis.DestinationSubnetHasRoute {
-		tml.Println("<green>✓</green> -> route - there is a route from source in route table")
-	} else {
-		tml.Println("<red>×</red> -> route - there is no route from source in route table")
-	}
-
-	if analysis.CanEnterDestination {
-		tml.Println("<green>✓</green> -> sg - there is an inbound rule for destination")
-	} else {
-		tml.Println("<red>×</red> -> sg - there is no inbound rule for destination")
-	}
+	printCheck(*analysis.DestinationSubnetHasRoute)
+	printCheck(*analysis.CanEnterDestination)
 }
