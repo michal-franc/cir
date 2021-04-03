@@ -256,7 +256,7 @@ func checkIfSecurityGroupAllowsIngressForIPandPort(securityGroupTo types.Securit
 	}
 	return &Check{
 		IsPassing: false,
-		Reason:    "security groups is not allowing this traffic",
+		Reason:    "destination inbound security group is not allowing this traffic",
 	}
 }
 
@@ -323,6 +323,6 @@ func checkIfSecurityGroupAllowsEgressForIPandPort(securityGroupFrom types.Securi
 
 	return &Check{
 		IsPassing: false,
-		Reason:    "security groups is not allowing this traffic",
+		Reason:    "source outbound security group is not allowing this traffic",
 	}
 }
