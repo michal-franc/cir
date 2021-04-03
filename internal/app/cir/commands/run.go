@@ -291,8 +291,6 @@ func checkIfSecurityGroupAllowsEgressForIPandPort(securityGroupFrom types.Securi
 
 func getSecurityGroupsById(ec2Instance *types.Instance, err error, ec2Svc *ec2.Client) (*[]types.SecurityGroup, error) {
 	//TODO: consider multiple security groups
-	//TODO: if cidr range points at security group you need to check this security group
-	// and which instances it has - does it match the one we are looking to find
 	groupId := ec2Instance.SecurityGroups[0].GroupId
 
 	securityGroupQuery := &ec2.DescribeSecurityGroupsInput{
@@ -301,8 +299,13 @@ func getSecurityGroupsById(ec2Instance *types.Instance, err error, ec2Svc *ec2.C
 	log.Debug("looking for security group")
 	securityGroupsResult, err := ec2Svc.DescribeSecurityGroups(context.Background(), securityGroupQuery)
 	if err != nil {
-		return &[]types.SecurityGroup{}, nil
+		return nil, err
 	}
+
+	if len(securityGroupsResult.SecurityGroups) <= 0 {
+		return nil, fmt.Errorf("security group for ec2:%s not found", *ec2Instance.InstanceId)
+	}
+
 	return &securityGroupsResult.SecurityGroups, nil
 }
 
@@ -335,5 +338,10 @@ func findEC2ByPrivateIp(privateIp string, client *ec2.Client) (*types.Instance, 
 	if len(ec2result.Reservations[0].Instances) <= 0 {
 		return nil, fmt.Errorf("ec2 with ip '%s' not found", privateIp)
 	}
+
+	if len(ec2result.Reservations[0].Instances) >= 1 {
+		return nil, fmt.Errorf("multiple ec2 found for given ip '%s'", privateIp)
+	}
+
 	return &ec2result.Reservations[0].Instances[0], nil
 }
