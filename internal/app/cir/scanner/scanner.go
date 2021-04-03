@@ -88,7 +88,10 @@ func findEC2ByPrivateIp(privateIp string, client *ec2.Client) (*types.Instance, 
 		return &types.Instance{}, fmt.Errorf("error when looking for ec2 %s", err)
 	}
 
-	//TODO: what if we get more reservations or isntances?
+	if len(ec2result.Reservations) > 0 {
+		return nil, fmt.Errorf("multiple reservations not supported")
+	}
+
 	if len(ec2result.Reservations) <= 0 {
 		return nil, fmt.Errorf("ec2 with ip '%s' not found", privateIp)
 	}
@@ -104,7 +107,6 @@ func findEC2ByPrivateIp(privateIp string, client *ec2.Client) (*types.Instance, 
 }
 
 func getSecurityGroupsById(ec2Instance *types.Instance, ec2Svc *ec2.Client) (*[]types.SecurityGroup, error) {
-	//TODO: consider multiple security groups
 	groupId := ec2Instance.SecurityGroups[0].GroupId
 
 	securityGroupQuery := &ec2.DescribeSecurityGroupsInput{
@@ -137,7 +139,6 @@ func getRouteTablesForEc2(ec2Instance *types.Instance, ec2Svc *ec2.Client) (*typ
 
 	routeTables, _ := ec2Svc.DescribeRouteTables(context.Background(), routeTableQuery)
 
-	//TODO: handle many route tables
 	if len(routeTables.RouteTables) <= 0 {
 		return nil, fmt.Errorf("no route table found for ec2 with ip '%s'", *ec2Instance.PrivateIpAddress)
 	}

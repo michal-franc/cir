@@ -17,7 +17,6 @@ type Check struct {
 }
 
 type Analysis struct {
-	//TODO: single quick response for non verbose display
 	CanTheyConnect                bool
 	CanEscapeSource               *Check
 	CanEnterDestination           *Check
@@ -38,10 +37,6 @@ func RunAnalysis(data scanner.AwsData, client *ec2.Client, port int32) (*Analysi
 	analysis := &Analysis{}
 	analysis.CanEscapeSource = checkIfSecurityGroupAllowsEgressForIPandPort(data.Source.SecurityGroup, *data.Destination.SecurityGroup.GroupId, port, ipDestination)
 
-	//TODO: but here we can escape through private or public internet
-	//if private we need to check if its the same VPC
-	//if its diff vpc we need to check if peering is active
-	//it might also go through TGW
 	canEscapeSourceSubnet, routeSource := lookForRouteOutsideSubnet(&data.Source.RouteTable, ipDestination)
 	analysis.SourceSubnetHasRoute = canEscapeSourceSubnet
 
@@ -63,7 +58,6 @@ func RunAnalysis(data scanner.AwsData, client *ec2.Client, port int32) (*Analysi
 }
 
 //TODO: error handling instead of fatals
-//TODO: reason
 func checkIfVPCConnectionIsActive(routeSource *types.Route, client *ec2.Client) *Check {
 	if routeSource.VpcPeeringConnectionId != nil {
 		vpcQuery := &ec2.DescribeVpcPeeringConnectionsInput{
@@ -91,7 +85,6 @@ func checkIfVPCConnectionIsActive(routeSource *types.Route, client *ec2.Client) 
 		}
 	}
 
-	//TODO: attacehements if there is no attacehement then there is no connection
 	if routeSource.TransitGatewayId != nil {
 		tgwQuery := &ec2.DescribeTransitGatewaysInput{
 			TransitGatewayIds: []string{*routeSource.TransitGatewayId},
@@ -177,7 +170,6 @@ func checkIfVPCConnectionValid(sourceRoute *types.Route, destRoute *types.Route)
 func lookForRouteOutsideSubnet(routeTable *types.RouteTable, ipDestination net.IP) (*Check, *types.Route) {
 	log.Debug("Checking subnet routing table")
 	for _, r := range routeTable.Routes {
-		//TODO: check why dest cidr block can be nil
 		if r.DestinationCidrBlock != nil {
 			//TODO: ignore for now igw and 0.0.0.0/0
 			if (*r.DestinationCidrBlock) == "0.0.0.0/0" {
@@ -204,11 +196,8 @@ func lookForRouteOutsideSubnet(routeTable *types.RouteTable, ipDestination net.I
 }
 
 //TODO: return err and add in proper error handling
-//TODO: multiple rules support at the moment it returns after finding one matching
 func checkIfSecurityGroupAllowsIngressForIPandPort(securityGroupTo types.SecurityGroup, securityGroupFromId string, port int32, ipFrom net.IP) *Check {
 	log.Debugf("Checking security group ingress - %s\n", *securityGroupTo.GroupId)
-	//TODO: check ip protocol udp vs tcp
-	//TODO: todo if port not specified create a list of ports that would be able to be sent through
 	for _, ingress := range securityGroupTo.IpPermissions {
 		if port >= ingress.FromPort && port <= ingress.ToPort {
 			log.Debugf("found port opening %s", toStringIpPermission(ingress))
@@ -272,11 +261,8 @@ func checkIfSecurityGroupAllowsIngressForIPandPort(securityGroupTo types.Securit
 }
 
 //TODO: return err and add in proper error handling
-//TODO: multiple rules support at the moment it returns after finding one matching
 func checkIfSecurityGroupAllowsEgressForIPandPort(securityGroupFrom types.SecurityGroup, securityGroupToId string, port int32, ipDestination net.IP) *Check {
 	log.Debugf("Checking security group egress - %s\n", *securityGroupFrom.GroupId)
-	//TODO: check ip protocol udp vs tcp
-	//TODO: todo if port not specified create a list of ports that would be able to be sent through
 	for _, egress := range securityGroupFrom.IpPermissionsEgress {
 		if port >= egress.FromPort && port <= egress.ToPort {
 			log.Debugf("found port opening %s", toStringIpPermission(egress))
