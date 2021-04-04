@@ -35,20 +35,20 @@ func toStringIPPermission(ip types.IpPermission) string {
 
 // RunAnalysis - takes aws data with scanned resources and processes it looking if a connection can be established
 func RunAnalysis(data scanner.AwsData, client *ec2.Client, port int32) (*Analysis, error) {
-	ipDestination := net.ParseIP(data.Destination.PrivateIP)
-	ipSource := net.ParseIP(data.Source.PrivateIP)
+	ipDestination := net.ParseIP(data.Destinations.PrivateIP)
+	ipSource := net.ParseIP(data.Sources.PrivateIP)
 	analysis := &Analysis{}
-	analysis.CanEscapeSource = checkIfSecurityGroupAllowsEgressForIPandPort(data.Source.SecurityGroup, *data.Destination.SecurityGroup.GroupId, port, ipDestination)
+	analysis.CanEscapeSource = checkIfSecurityGroupAllowsEgressForIPandPort(data.Sources.SecurityGroup, *data.Destinations.SecurityGroup.GroupId, port, ipDestination)
 
-	canEscapeSourceSubnet, routeSource := lookForRouteOutsideSubnet(&data.Source.RouteTable, ipDestination)
+	canEscapeSourceSubnet, routeSource := lookForRouteOutsideSubnet(&data.Sources.RouteTable, ipDestination)
 	analysis.SourceSubnetHasRoute = canEscapeSourceSubnet
 
-	analysis.CanEnterDestination = checkIfSecurityGroupAllowsIngressForIPandPort(data.Destination.SecurityGroup, *data.Source.SecurityGroup.GroupId, port, ipSource)
+	analysis.CanEnterDestination = checkIfSecurityGroupAllowsIngressForIPandPort(data.Destinations.SecurityGroup, *data.Sources.SecurityGroup.GroupId, port, ipSource)
 
-	canEscapeDestinationSubnet, routeDestination := lookForRouteOutsideSubnet(&data.Destination.RouteTable, ipSource)
+	canEscapeDestinationSubnet, routeDestination := lookForRouteOutsideSubnet(&data.Destinations.RouteTable, ipSource)
 	analysis.DestinationSubnetHasRoute = canEscapeDestinationSubnet
 
-	analysis.AreInTheSameVpc = data.Destination.VpcID == data.Source.VpcID
+	analysis.AreInTheSameVpc = data.Destinations.VpcID == data.Sources.VpcID
 
 	if !analysis.AreInTheSameVpc {
 		analysis.ConnectionBetweenVPCsIsValid = checkIfVPCConnectionValid(routeSource, routeDestination)
