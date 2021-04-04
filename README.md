@@ -45,7 +45,6 @@ As engineer, I have spent a lot of time debugging connection problems on AWS. Th
 
 ### Current limitations
 This is early on in development and not everything is supported. At the moment I am focusing on covering scenarios useful for my current client.
-- only linux binary supported (this will be quickly solved)
 - only AWS supported
 - only resources belonging to same AWS account supported
 - only ec2 supported
@@ -60,6 +59,8 @@ cir run --from 10.121.1.232 --to 10.133.4.9 --port 3128
 ```
 
 ### Installation
+It was tested on `linux`.  
+Binaries for `windows` and `mac (darwin)` are availalbe but are untested as of yet.
 
 Download binary from github releases and unpack it to your `PATH` folder.
 
