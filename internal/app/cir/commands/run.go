@@ -15,15 +15,15 @@ import (
 	"github.com/michal-franc/cir/internal/app/cir/scanner"
 )
 
-var sourceIp string
-var destinationIp string
+var sourceIP string
+var destinationIP string
 var port int32
 var debug bool
 
 func init() {
-	startCmd.Flags().StringVar(&sourceIp, "from", "", "Specifies which machine the communication is initiated from.")
+	startCmd.Flags().StringVar(&sourceIP, "from", "", "Specifies which machine the communication is initiated from.")
 	startCmd.MarkFlagRequired("from")
-	startCmd.Flags().StringVar(&destinationIp, "to", "", "Specifies which machine the communication is destined to go to.")
+	startCmd.Flags().StringVar(&destinationIP, "to", "", "Specifies which machine the communication is destined to go to.")
 	startCmd.MarkFlagRequired("to")
 	startCmd.Flags().Int32Var(&port, "port", -1, "Specifies which port should be checked.")
 	startCmd.MarkFlagRequired("port")
@@ -31,16 +31,16 @@ func init() {
 	rootCmd.AddCommand(startCmd)
 }
 
-func validateIp(ip string, paramName string) bool {
-	sIp := net.ParseIP(ip)
-	if sIp == nil {
+func validateIP(ip string, paramName string) bool {
+	parsedIP := net.ParseIP(ip)
+	if parsedIP == nil {
 		fmt.Printf("%s unable to parse ip\n", paramName)
 		return false
-	} else {
-		if sIp.To4() == nil {
-			fmt.Printf("%s param is ipv6 - not supported yet\n", paramName)
-			return false
-		}
+	}
+
+	if parsedIP.To4() == nil {
+		fmt.Printf("%s param is ipv6 - not supported yet\n", paramName)
+		return false
 	}
 
 	return true
@@ -54,8 +54,8 @@ func validateArgs() bool {
 		isValid = false
 	}
 
-	isValid = validateIp(sourceIp, "from") && isValid
-	isValid = validateIp(destinationIp, "to") && isValid
+	isValid = validateIP(sourceIP, "from") && isValid
+	isValid = validateIP(destinationIP, "to") && isValid
 
 	return isValid
 }
@@ -69,7 +69,7 @@ var startCmd = &cobra.Command{
 		}
 
 		log.SetLevel(log.WarnLevel)
-		fmt.Printf("checking if '%s' can reach '%s on port '%d'\n", sourceIp, destinationIp, port)
+		fmt.Printf("checking if '%s' can reach '%s on port '%d'\n", sourceIP, destinationIP, port)
 
 		if debug {
 			log.SetLevel(log.DebugLevel)
@@ -90,14 +90,14 @@ var startCmd = &cobra.Command{
 		}
 
 		ec2Svc := ec2.NewFromConfig(cfg)
-		data, err := scanner.ScanAwsEc2(ec2Svc, sourceIp, destinationIp)
+		data, err := scanner.ScanAwsEc2(ec2Svc, sourceIP, destinationIP)
 		if err != nil {
-			log.Fatalf("Error when scannning looking for AWS resources - %s", err)
+			log.Fatalf("error when scanning AWS resources - %s", err)
 		}
 
 		analysis, err := analyser.RunAnalysis(*data, ec2Svc, port)
 		if err != nil {
-			log.Fatalf("Error when analysing data - %s", err)
+			log.Fatalf("error when analysing data - %s", err)
 		}
 
 		printer.PrintAnalysis(*analysis)

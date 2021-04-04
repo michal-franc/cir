@@ -8,36 +8,39 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type ResourceMetaData struct {
-	PrivateIp     string
-	VpcId         string
+// ResourceNetworkMetaData - main struct for single aws resource network metadata
+type ResourceNetworkMetaData struct {
+	PrivateIP     string
+	VpcID         string
 	SecurityGroup types.SecurityGroup
-	SubnetId      string
+	SubnetID      string
 	RouteTable    types.RouteTable
 }
 
+// AwsData - main struct holding scanned resources for further processing
 type AwsData struct {
-	Source      *ResourceMetaData
-	Destination *ResourceMetaData
+	Source      *ResourceNetworkMetaData
+	Destination *ResourceNetworkMetaData
 }
 
-func ScanAwsEc2(client *ec2.Client, sourceIp string, destinationIp string) (*AwsData, error) {
-	ec2InstanceSource, err := findEC2ByPrivateIp(sourceIp, client)
+// ScanAwsEc2 - initiates ec2 aws scan
+func ScanAwsEc2(client *ec2.Client, sourceIP string, destinationIP string) (*AwsData, error) {
+	ec2InstanceSource, err := findEC2ByPrivateIP(sourceIP, client)
 	if err != nil {
 		return &AwsData{}, err
 	}
 
-	ec2InstanceDestination, err := findEC2ByPrivateIp(destinationIp, client)
+	ec2InstanceDestination, err := findEC2ByPrivateIP(destinationIP, client)
 	if err != nil {
 		return &AwsData{}, err
 	}
 
-	securityGroupsDestination, err := getSecurityGroupsById(ec2InstanceDestination, client)
+	securityGroupsDestination, err := getSecurityGroupsByID(ec2InstanceDestination, client)
 	if err != nil {
 		return &AwsData{}, err
 	}
 
-	securityGroupsSource, err := getSecurityGroupsById(ec2InstanceSource, client)
+	securityGroupsSource, err := getSecurityGroupsByID(ec2InstanceSource, client)
 	if err != nil {
 		return &AwsData{}, err
 	}
@@ -53,31 +56,31 @@ func ScanAwsEc2(client *ec2.Client, sourceIp string, destinationIp string) (*Aws
 	}
 
 	return &AwsData{
-		Source: &ResourceMetaData{
-			PrivateIp:     *ec2InstanceSource.PrivateIpAddress,
+		Source: &ResourceNetworkMetaData{
+			PrivateIP:     *ec2InstanceSource.PrivateIpAddress,
 			SecurityGroup: (*securityGroupsSource)[0],
-			VpcId:         *ec2InstanceSource.VpcId,
-			SubnetId:      *ec2InstanceSource.SubnetId,
+			VpcID:         *ec2InstanceSource.VpcId,
+			SubnetID:      *ec2InstanceSource.SubnetId,
 			RouteTable:    *routeTableSource,
 		},
-		Destination: &ResourceMetaData{
-			PrivateIp:     *ec2InstanceDestination.PrivateIpAddress,
+		Destination: &ResourceNetworkMetaData{
+			PrivateIP:     *ec2InstanceDestination.PrivateIpAddress,
 			SecurityGroup: (*securityGroupsDestination)[0],
-			VpcId:         *ec2InstanceDestination.VpcId,
-			SubnetId:      *ec2InstanceDestination.SubnetId,
+			VpcID:         *ec2InstanceDestination.VpcId,
+			SubnetID:      *ec2InstanceDestination.SubnetId,
 			RouteTable:    *routeTableDestination,
 		},
 	}, nil
 }
 
-func findEC2ByPrivateIp(privateIp string, client *ec2.Client) (*types.Instance, error) {
-	log.Debugf("Looking for EC2 with private ip: '%s'", privateIp)
+func findEC2ByPrivateIP(privateIP string, client *ec2.Client) (*types.Instance, error) {
+	log.Debugf("Looking for EC2 with private ip: '%s'", privateIP)
 	filterName := "network-interface.addresses.private-ip-address"
 	query := &ec2.DescribeInstancesInput{
 		Filters: []types.Filter{
 			{
 				Name:   &filterName,
-				Values: []string{privateIp},
+				Values: []string{privateIP},
 			},
 		},
 	}
@@ -93,24 +96,24 @@ func findEC2ByPrivateIp(privateIp string, client *ec2.Client) (*types.Instance, 
 	}
 
 	if len(ec2result.Reservations) <= 0 {
-		return nil, fmt.Errorf("ec2 with ip '%s' not found", privateIp)
+		return nil, fmt.Errorf("ec2 with ip '%s' not found", privateIP)
 	}
 	if len(ec2result.Reservations[0].Instances) <= 0 {
-		return nil, fmt.Errorf("ec2 with ip '%s' not found", privateIp)
+		return nil, fmt.Errorf("ec2 with ip '%s' not found", privateIP)
 	}
 
 	if len(ec2result.Reservations[0].Instances) > 1 {
-		return nil, fmt.Errorf("multiple ec2 found for given ip '%s'", privateIp)
+		return nil, fmt.Errorf("multiple ec2 found for given ip '%s'", privateIP)
 	}
 
 	return &ec2result.Reservations[0].Instances[0], nil
 }
 
-func getSecurityGroupsById(ec2Instance *types.Instance, ec2Svc *ec2.Client) (*[]types.SecurityGroup, error) {
-	groupId := ec2Instance.SecurityGroups[0].GroupId
+func getSecurityGroupsByID(ec2Instance *types.Instance, ec2Svc *ec2.Client) (*[]types.SecurityGroup, error) {
+	groupID := ec2Instance.SecurityGroups[0].GroupId
 
 	securityGroupQuery := &ec2.DescribeSecurityGroupsInput{
-		GroupIds: []string{*groupId},
+		GroupIds: []string{*groupID},
 	}
 	log.Debug("looking for security group")
 	securityGroupsResult, err := ec2Svc.DescribeSecurityGroups(context.Background(), securityGroupQuery)
@@ -127,11 +130,11 @@ func getSecurityGroupsById(ec2Instance *types.Instance, ec2Svc *ec2.Client) (*[]
 
 func getRouteTablesForEc2(ec2Instance *types.Instance, ec2Svc *ec2.Client) (*types.RouteTable, error) {
 	log.Debug("Checking subnet routing table")
-	filterSubnetId := "association.subnet-id"
+	filterSubnetID := "association.subnet-id"
 	routeTableQuery := &ec2.DescribeRouteTablesInput{
 		Filters: []types.Filter{
 			{
-				Name:   &filterSubnetId,
+				Name:   &filterSubnetID,
 				Values: []string{*ec2Instance.SubnetId},
 			},
 		},

@@ -22,6 +22,7 @@ func printCheck(c analyser.Check) {
 	}
 }
 
+// PrintAnalysis - print the analysis for human consumption in cli :)
 func PrintAnalysis(analysis analyser.Analysis) {
 	if analysis.AreInTheSameVpc {
 		tml.Println("(source and dest - in the same vpc)")
