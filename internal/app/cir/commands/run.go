@@ -1,14 +1,13 @@
 package commands
 
 import (
-	"github.com/michal-franc/cir/internal/app/cir/analyser"
-	"github.com/michal-franc/cir/internal/app/cir/printer"
-	"github.com/spf13/cobra"
-
 	"context"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/michal-franc/cir/internal/app/cir/analyser"
+	"github.com/michal-franc/cir/internal/app/cir/printer"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/michal-franc/cir/internal/app/cir/scanner"
@@ -41,6 +40,15 @@ var startCmd = &cobra.Command{
 		cfg, err := config.LoadDefaultConfig(context.Background())
 		if err != nil {
 			log.Fatalf("unable to load SDK config, %v", err)
+		}
+
+		creds, err := cfg.Credentials.Retrieve(context.Background())
+		if err != nil {
+			log.Fatal("no credentials or invalid credentials provided")
+		}
+
+		if creds.Expired() {
+			log.Fatal("aws credentials have expired - aborting")
 		}
 
 		ec2Svc := ec2.NewFromConfig(cfg)
