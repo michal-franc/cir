@@ -47,7 +47,7 @@ func ScanAwsEc2(client *ec2.Client, sourceIp string, destinationIp string) (*Aws
 		return &AwsData{}, err
 	}
 
-	routeTableDestination, err := getRouteTablesForEc2(ec2InstanceSource, client)
+	routeTableDestination, err := getRouteTablesForEc2(ec2InstanceDestination, client)
 	if err != nil {
 		return &AwsData{}, err
 	}
