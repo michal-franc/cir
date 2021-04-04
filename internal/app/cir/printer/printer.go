@@ -8,9 +8,9 @@ import (
 
 func printRedGreen(message string, b bool) {
 	if b {
-		tml.Printf("<green>✓</green> -> %s\n", message)
+		tml.Printf("<green>✓</green> %s\n", message)
 	} else {
-		tml.Printf("<red>×</red> -> %s\n", message)
+		tml.Printf("<red>×</red> %s\n", message)
 	}
 }
 
@@ -24,9 +24,9 @@ func printCheck(c analyser.Check) {
 
 func PrintAnalysis(analysis analyser.Analysis) {
 	if analysis.AreInTheSameVpc {
-		tml.Println("(same vpc)")
+		tml.Println("(source and dest - in the same vpc)")
 	} else {
-		tml.Println("(different vpcs)")
+		tml.Println("(source and dest - in different vpcs)")
 	}
 
 	printRedGreen("security groups:", analysis.CanEnterDestination.IsPassing && analysis.CanEscapeSource.IsPassing)

@@ -42,16 +42,14 @@ func RunAnalysis(data scanner.AwsData, client *ec2.Client, port int32) (*Analysi
 
 	analysis.CanEnterDestination = checkIfSecurityGroupAllowsIngressForIPandPort(data.Destination.SecurityGroup, *data.Source.SecurityGroup.GroupId, port, ipSource)
 
-	canEscapeDestinationSubnet, routeDestination := lookForRouteOutsideSubnet(&data.Source.RouteTable, ipDestination)
+	canEscapeDestinationSubnet, routeDestination := lookForRouteOutsideSubnet(&data.Destination.RouteTable, ipSource)
 	analysis.DestinationSubnetHasRoute = canEscapeDestinationSubnet
 
 	analysis.AreInTheSameVpc = data.Destination.VpcId == data.Source.VpcId
 
 	if !analysis.AreInTheSameVpc {
 		analysis.ConnectionBetweenVPCsIsValid = checkIfVPCConnectionValid(routeSource, routeDestination)
-		if analysis.ConnectionBetweenVPCsIsValid.IsPassing {
-			analysis.ConnectionBetweenVPCsIsActive = checkIfVPCConnectionIsActive(routeSource, client)
-		}
+		analysis.ConnectionBetweenVPCsIsActive = checkIfVPCConnectionIsActive(routeSource, client)
 	}
 
 	return analysis, nil
@@ -129,8 +127,7 @@ func checkIfVPCConnectionValid(sourceRoute *types.Route, destRoute *types.Route)
 	}
 
 	if sourceRoute.GatewayId != nil || destRoute.GatewayId != nil {
-		log.Warn("route check: Gateway not supported yet")
-		return &Check{false, "Gateway not supported yet"}
+		return &Check{false, fmt.Sprintf("route check: Gateway not supported yet")}
 	}
 
 	if sourceRoute.LocalGatewayId != nil || destRoute.LocalGatewayId != nil {
@@ -149,14 +146,14 @@ func checkIfVPCConnectionValid(sourceRoute *types.Route, destRoute *types.Route)
 	}
 
 	if sourceRoute.VpcPeeringConnectionId != nil && destRoute.VpcPeeringConnectionId != nil {
-		if sourceRoute.VpcPeeringConnectionId != destRoute.VpcPeeringConnectionId {
+		if *sourceRoute.VpcPeeringConnectionId != *destRoute.VpcPeeringConnectionId {
 			return &Check{false, fmt.Sprintf("source vpc peering id: %s - doesnt match - dest vpc peering id: %s", *sourceRoute.VpcPeeringConnectionId, *destRoute.VpcPeeringConnectionId)}
 		}
 		return &Check{true, fmt.Sprintf("source and dest connected using vpc peering: %s", *sourceRoute.VpcPeeringConnectionId)}
 	}
 
 	if sourceRoute.TransitGatewayId != nil && destRoute.TransitGatewayId != nil {
-		if sourceRoute.TransitGatewayId != destRoute.TransitGatewayId {
+		if *sourceRoute.TransitGatewayId != *destRoute.TransitGatewayId {
 			return &Check{false, fmt.Sprintf("source tgw id: %s - doesnt match - dest tgw id: %s", *sourceRoute.TransitGatewayId, *destRoute.TransitGatewayId)}
 		}
 		return &Check{true, fmt.Sprintf("source and dest connected using tgw: %s", *sourceRoute.TransitGatewayId)}

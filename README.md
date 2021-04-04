@@ -5,27 +5,39 @@ A tool to check network connections problems in your cloud network setup. This t
 
 Positive
 ```
-cir run --from 10.88.7.232 --to 10.44.4.9 --port 3128
-checking if '10.88.7.232' can reach '10.44.4.9 on port '3128'
-(different vpcs)
-✓ -> found outbound rule pointing at ipv4 cidr range 10.44.0.0/16
-✓ -> found route in route table 'rtb-0a11ded61ad1e8c47' with range '10.44.0.0/16'
-✓ -> source and dest connected using tgw: tgw-0c104110f1c2d7b0c 
-✓ -> tgw - tgw-0c104110f1c2d7b0c - is available
-✓ -> found route in route table 'rtb-0a11ded61dd1e8c67' with range '10.44.0.0/16'
+
+
+cir run --from 10.44.7.232 --to 10.99.4.9 --port 3128
+checking if '10.44.7.232' can reach '10.99.4.9 on port '3128'
+(source and dest - in different vpcs)
+✓ security groups:
+✓ -> found outbound rule pointing at ipv4 cidr range 10.99.0.0/16
 ✓ -> found inbound rule pointing at ipv4 cidr range 10.0.0.0/8
+
+✓ subnets:
+✓ -> found route in route table 'rtb-1a11d1d61dd1e8c67' with range '10.99.0.0/16'
+✓ -> found route in route table 'rtb-0d70f88fcb217b113' with range '10.44.0.0/16'
+
+✓ vpc connection:
+✓ -> source and dest connected using tgw: tgw-0c104210f1c1d7b0c
+✓ -> tgw - tgw-0c104210f1c1d7b0c - is available
 ```
 Negative
 ```
-cir run --from 10.88.7.232 --to 10.44.4.9 --port 3129
-checking if '10.88.7.232' can reach '10.44.4.9 on port '3129'
-(different vpcs)
-× -> source outbound security group is not allowing this traffic
-✓ -> found route in route table 'rtb-0a11ded61ad1e8c47' with range '10.44.0.0/16'
-✓ -> source and dest connected using tgw: tgw-0c104110f1c2d7b0c 
-✓ -> tgw - tgw-0c104110f1c2d7b0c - is available
-✓ -> found route in route table 'rtb-0a11ded61dd1e8c67' with range '10.44.0.0/16'
-× -> destination inbound security group is not allowing this traffic
+cir run --from 10.44.7.232 --to 10.99.4.9 --port 3128
+checking if '10.44.7.232' can reach '10.99.4.9 on port '3128'
+(source and dest - in different vpcs)
+✓ security groups:
+✓ -> found outbound rule pointing at ipv4 cidr range 10.99.0.0/16
+✓ -> found inbound rule pointing at ipv4 cidr range 10.0.0.0/8
+
+x subnets:
+✓ -> found route in route table 'rtb-1a11d1d61dd1e8c67' with range '10.99.0.0/16'
+x -> found no route in route table 'rtb-0d70f88fcb217b113'
+
+✓ vpc connection:
+✓ -> source and dest connected using tgw: tgw-0c104210f1c1d7b0c
+✓ -> tgw - tgw-0c104210f1c1d7b0c - is available
 ```
 
 ### Motivation

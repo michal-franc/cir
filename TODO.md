@@ -1,3 +1,7 @@
+TODO to ISSUES (maybe in order):
+- [ ] what if source route points to TGW but destination route points to VPC Peering?
+    - we need to throw an error that there is a mismatch
+
 IDEAS:
 
 ```
