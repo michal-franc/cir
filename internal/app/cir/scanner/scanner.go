@@ -88,7 +88,7 @@ func findEC2ByPrivateIp(privateIp string, client *ec2.Client) (*types.Instance, 
 		return &types.Instance{}, fmt.Errorf("error when looking for ec2 %s", err)
 	}
 
-	if len(ec2result.Reservations) > 0 {
+	if len(ec2result.Reservations) > 1 {
 		return nil, fmt.Errorf("multiple reservations not supported")
 	}
 
