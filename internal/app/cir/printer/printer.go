@@ -22,8 +22,23 @@ func printCheck(c analyser.Check) {
 	}
 }
 
+// PrintSummary - prints quick summary of list of analysis
+func PrintSummary(listOfAnalysis []analyser.Analysis) {
+	fmt.Println("\nSummary: (if you want more details use --detailed flag)")
+	for _, a := range listOfAnalysis {
+		printRedGreen(fmt.Sprintf("%s can reach %s", a.SourceID, a.DestinationID), a.CanTheyConnect())
+	}
+}
+
 // PrintAnalysis - print the analysis for human consumption in cli :)
-func PrintAnalysis(analysis analyser.Analysis) {
+func PrintAnalysis(analysis analyser.Analysis, detailed bool) {
+	if analysis.CanTheyConnect() && !detailed {
+		return
+	}
+
+	tml.Printf("<yellow>Check if %s can reach %s</yellow>\n", analysis.SourceID, analysis.DestinationID)
+	tml.Println("<yellow>---------------------------</yellow>")
+
 	if analysis.AreInTheSameVpc {
 		tml.Println("(source and dest - in the same vpc)")
 	} else {
@@ -45,4 +60,5 @@ func PrintAnalysis(analysis analyser.Analysis) {
 		printCheck(*analysis.ConnectionBetweenVPCsIsValid)
 		printCheck(*analysis.ConnectionBetweenVPCsIsActive)
 	}
+	tml.Println("<yellow>---------------------------</yellow>")
 }

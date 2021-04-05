@@ -5,10 +5,10 @@ A tool to check network connections problems in your cloud network setup. This t
 
 Positive
 ```
-
-
 cir run --from 10.44.7.232 --to 10.99.4.9 --port 3128
 checking if '10.44.7.232' can reach '10.99.4.9 on port '3128'
+Check if i-0def11e311aee206c can reach i-075e1119ce9103d62
+---------------------------
 (source and dest - in different vpcs)
 ✓ security groups:
 ✓ -> found outbound rule pointing at ipv4 cidr range 10.99.0.0/16
@@ -21,11 +21,14 @@ checking if '10.44.7.232' can reach '10.99.4.9 on port '3128'
 ✓ vpc connection:
 ✓ -> source and dest connected using tgw: tgw-0c104210f1c1d7b0c
 ✓ -> tgw - tgw-0c104210f1c1d7b0c - is available
+---------------------------
 ```
 Negative
 ```
 cir run --from 10.44.7.232 --to 10.99.4.9 --port 3128
 checking if '10.44.7.232' can reach '10.99.4.9 on port '3128'
+Check if i-0def11e311aee206c can reach i-075e1119ce9103d62
+---------------------------
 (source and dest - in different vpcs)
 ✓ security groups:
 ✓ -> found outbound rule pointing at ipv4 cidr range 10.99.0.0/16
@@ -38,6 +41,7 @@ x -> found no route in route table 'rtb-0d70f88fcb217b113'
 ✓ vpc connection:
 ✓ -> source and dest connected using tgw: tgw-0c104210f1c1d7b0c
 ✓ -> tgw - tgw-0c104210f1c1d7b0c - is available
+---------------------------
 ```
 
 ### Motivation
@@ -54,13 +58,22 @@ This is early on in development and not everything is supported. At the moment I
 
 ### Usage
 You need to have AWS credentials available in `ENV`, `.aws` etc
+
+Querying by `ip`
 ```
-cir run --from 10.121.1.232 --to 10.133.4.9 --port 3128
+cir run --from ip:10.121.1.232 --to ip:10.133.4.9 --port 3128
 ```
+
+Querying by `name`.
+```
+cir run --from name:awesome-ec2 --to name:another-great-ec2 --port 3128
+```
+If there are more than `1` ec2 instances - all sources are checked if can reach all destinations and summary is displayed if all are passing.
+Only the ones failing are shown in details. You can force detail display for all checks with `--detailed` flag.
 
 ### Installation
 It was tested on `linux`.  
-Binaries for `windows` and `mac (darwin)` are availalbe but are untested as of yet.
+Binaries for `windows` and `mac (darwin)` are available but are untested yet.
 
 Download binary from github releases and unpack it to your `PATH` folder.
 
