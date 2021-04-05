@@ -19,6 +19,7 @@ var sourceQuery string
 var destinationQuery string
 var port int32
 var debug bool
+var detailed bool
 
 func init() {
 	startCmd.Flags().StringVar(&sourceQuery, "from", "", "Specifies which machine the communication is initiated from eg ip:127.0.0.0 or name:my-awesome-ec2.")
@@ -28,6 +29,7 @@ func init() {
 	startCmd.Flags().Int32Var(&port, "port", -1, "Specifies which port should be checked.")
 	startCmd.MarkFlagRequired("port")
 	startCmd.Flags().BoolVar(&debug, "debug", false, "Specifies if debug messages should be emitted.")
+	startCmd.Flags().BoolVar(&detailed, "detailed", false, "Will print detailed analysis regardless if there is one analysis or more.")
 	rootCmd.AddCommand(startCmd)
 }
 
@@ -84,11 +86,18 @@ var startCmd = &cobra.Command{
 			log.Fatalf("error when scanning AWS resources - %s", err)
 		}
 
-		analysis, err := analyser.RunAnalysis(*data, ec2Svc, port)
+		listOfAnalysis, err := analyser.RunAnalysis(*data, ec2Svc, port)
 		if err != nil {
 			log.Fatalf("error when analysing data - %s", err)
 		}
 
-		printer.PrintAnalysis(*analysis)
+		for _, a := range listOfAnalysis {
+			printer.PrintAnalysis(a, len(listOfAnalysis) <= 1 || detailed)
+		}
+
+		// we want to print summary at the end if there are more than one listOfAnalysis
+		if len(listOfAnalysis) > 1 {
+			printer.PrintSummary(listOfAnalysis)
+		}
 	},
 }

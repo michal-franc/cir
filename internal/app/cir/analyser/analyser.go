@@ -19,7 +19,8 @@ type Check struct {
 
 // Analysis - main struct holding information which indicated if connection can be established
 type Analysis struct {
-	CanTheyConnect                bool
+	SourceID                      string
+	DestinationID                 string
 	CanEscapeSource               *Check
 	CanEnterDestination           *Check
 	SourceSubnetHasRoute          *Check
@@ -29,36 +30,54 @@ type Analysis struct {
 	ConnectionBetweenVPCsIsActive *Check
 }
 
+// CanTheyConnect - return true if all the checks are passing
+func (a *Analysis) CanTheyConnect() bool {
+	return a.CanEnterDestination.IsPassing &&
+		a.CanEscapeSource.IsPassing &&
+		a.ConnectionBetweenVPCsIsActive.IsPassing &&
+		a.ConnectionBetweenVPCsIsValid.IsPassing &&
+		a.SourceSubnetHasRoute.IsPassing &&
+		a.DestinationSubnetHasRoute.IsPassing
+}
+
 func toStringIPPermission(ip types.IpPermission) string {
 	return fmt.Sprintf("%s %d-%d", *ip.IpProtocol, ip.FromPort, ip.ToPort)
 }
 
 // RunAnalysis - takes aws data with scanned resources and processes it looking if a connection can be established
-func RunAnalysis(data scanner.AwsData, client *ec2.Client, port int32) (*Analysis, error) {
-	source := data.Sources[0]
-	destination := data.Destinations[0]
+func RunAnalysis(data scanner.AwsData, client *ec2.Client, port int32) ([]Analysis, error) {
+	listOfAnalysis := &[]Analysis{}
 
-	ipDestination := net.ParseIP(destination.PrivateIP)
-	ipSource := net.ParseIP(source.PrivateIP)
-	analysis := &Analysis{}
-	analysis.CanEscapeSource = checkIfSecurityGroupAllowsEgressForIPandPort(source.SecurityGroup, *destination.SecurityGroup.GroupId, port, ipDestination)
+	for _, source := range data.Sources {
+		for _, destination := range data.Destinations {
+			ipDestination := net.ParseIP(destination.PrivateIP)
+			ipSource := net.ParseIP(source.PrivateIP)
+			analysis := &Analysis{
+				SourceID:      source.ID,
+				DestinationID: destination.ID,
+			}
+			analysis.CanEscapeSource = checkIfSecurityGroupAllowsEgressForIPandPort(source.SecurityGroup, *destination.SecurityGroup.GroupId, port, ipDestination)
 
-	canEscapeSourceSubnet, routeSource := lookForRouteOutsideSubnet(source.RouteTable, ipDestination)
-	analysis.SourceSubnetHasRoute = canEscapeSourceSubnet
+			canEscapeSourceSubnet, routeSource := lookForRouteOutsideSubnet(source.RouteTable, ipDestination)
+			analysis.SourceSubnetHasRoute = canEscapeSourceSubnet
 
-	analysis.CanEnterDestination = checkIfSecurityGroupAllowsIngressForIPandPort(destination.SecurityGroup, *source.SecurityGroup.GroupId, port, ipSource)
+			analysis.CanEnterDestination = checkIfSecurityGroupAllowsIngressForIPandPort(destination.SecurityGroup, *source.SecurityGroup.GroupId, port, ipSource)
 
-	canEscapeDestinationSubnet, routeDestination := lookForRouteOutsideSubnet(destination.RouteTable, ipSource)
-	analysis.DestinationSubnetHasRoute = canEscapeDestinationSubnet
+			canEscapeDestinationSubnet, routeDestination := lookForRouteOutsideSubnet(destination.RouteTable, ipSource)
+			analysis.DestinationSubnetHasRoute = canEscapeDestinationSubnet
 
-	analysis.AreInTheSameVpc = destination.VpcID == source.VpcID
+			analysis.AreInTheSameVpc = destination.VpcID == source.VpcID
 
-	if !analysis.AreInTheSameVpc {
-		analysis.ConnectionBetweenVPCsIsValid = checkIfVPCConnectionValid(routeSource, routeDestination)
-		analysis.ConnectionBetweenVPCsIsActive = checkIfVPCConnectionIsActive(routeSource, client)
+			if !analysis.AreInTheSameVpc {
+				analysis.ConnectionBetweenVPCsIsValid = checkIfVPCConnectionValid(routeSource, routeDestination)
+				analysis.ConnectionBetweenVPCsIsActive = checkIfVPCConnectionIsActive(routeSource, client)
+			}
+
+			*listOfAnalysis = append(*listOfAnalysis, *analysis)
+
+		}
 	}
-
-	return analysis, nil
+	return *listOfAnalysis, nil
 }
 
 //TODO: error handling instead of fatals

@@ -9,7 +9,7 @@ TODO to ISSUES (maybe in order):
 - [ ] TGW: attachements instead of just checking if TGW is enabled
  
 // New Features 
-- [ ] ability to specifiy Tag name and search for boxes using it
+- [x] ability to specifiy Tag name and search for boxes using it
     - this is required for scenario based testing
     - if multiple boxes found - check all of them
 - [ ] support lambda reachability - to ec2
@@ -31,6 +31,7 @@ TODO to ISSUES (maybe in order):
 // Improvemenets
 - [ ] scanner: dont query the same resource twice - use caching
 - [ ] analysed: dont analyse the same securitygroup, routetable twice - use caching
+- [ ] add in benchmarks like in tfsec
  
 // New checks 
 - [ ] cir ec2.aws -> if 0.0.0.0/0 enabled - yes

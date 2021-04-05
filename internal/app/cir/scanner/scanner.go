@@ -11,6 +11,7 @@ import (
 
 // ResourceNetworkMetaData - main struct for single aws resource network metadata
 type ResourceNetworkMetaData struct {
+	ID            string
 	PrivateIP     string
 	VpcID         string
 	SecurityGroup types.SecurityGroup
@@ -45,6 +46,7 @@ func ScanAwsEc2(client *ec2.Client, sourceQuery string, destinationQuery string)
 
 	for _, ec2Instance := range ec2InstancesSource {
 		metaDataInstance := ResourceNetworkMetaData{
+			ID:        *ec2Instance.InstanceId,
 			PrivateIP: *ec2Instance.PrivateIpAddress,
 			VpcID:     *ec2Instance.VpcId,
 			SubnetID:  *ec2Instance.SubnetId,
@@ -67,6 +69,7 @@ func ScanAwsEc2(client *ec2.Client, sourceQuery string, destinationQuery string)
 
 	for _, ec2Instance := range ec2InstancesDestination {
 		metaDataInstance := ResourceNetworkMetaData{
+			ID:        *ec2Instance.InstanceId,
 			PrivateIP: *ec2Instance.PrivateIpAddress,
 			VpcID:     *ec2Instance.VpcId,
 			SubnetID:  *ec2Instance.SubnetId,
