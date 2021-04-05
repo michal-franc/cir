@@ -35,20 +35,23 @@ func toStringIPPermission(ip types.IpPermission) string {
 
 // RunAnalysis - takes aws data with scanned resources and processes it looking if a connection can be established
 func RunAnalysis(data scanner.AwsData, client *ec2.Client, port int32) (*Analysis, error) {
-	ipDestination := net.ParseIP(data.Destinations.PrivateIP)
-	ipSource := net.ParseIP(data.Sources.PrivateIP)
-	analysis := &Analysis{}
-	analysis.CanEscapeSource = checkIfSecurityGroupAllowsEgressForIPandPort(data.Sources.SecurityGroup, *data.Destinations.SecurityGroup.GroupId, port, ipDestination)
+	source := data.Sources[0]
+	destination := data.Destinations[0]
 
-	canEscapeSourceSubnet, routeSource := lookForRouteOutsideSubnet(&data.Sources.RouteTable, ipDestination)
+	ipDestination := net.ParseIP(destination.PrivateIP)
+	ipSource := net.ParseIP(source.PrivateIP)
+	analysis := &Analysis{}
+	analysis.CanEscapeSource = checkIfSecurityGroupAllowsEgressForIPandPort(source.SecurityGroup, *destination.SecurityGroup.GroupId, port, ipDestination)
+
+	canEscapeSourceSubnet, routeSource := lookForRouteOutsideSubnet(source.RouteTable, ipDestination)
 	analysis.SourceSubnetHasRoute = canEscapeSourceSubnet
 
-	analysis.CanEnterDestination = checkIfSecurityGroupAllowsIngressForIPandPort(data.Destinations.SecurityGroup, *data.Sources.SecurityGroup.GroupId, port, ipSource)
+	analysis.CanEnterDestination = checkIfSecurityGroupAllowsIngressForIPandPort(destination.SecurityGroup, *source.SecurityGroup.GroupId, port, ipSource)
 
-	canEscapeDestinationSubnet, routeDestination := lookForRouteOutsideSubnet(&data.Destinations.RouteTable, ipSource)
+	canEscapeDestinationSubnet, routeDestination := lookForRouteOutsideSubnet(destination.RouteTable, ipSource)
 	analysis.DestinationSubnetHasRoute = canEscapeDestinationSubnet
 
-	analysis.AreInTheSameVpc = data.Destinations.VpcID == data.Sources.VpcID
+	analysis.AreInTheSameVpc = destination.VpcID == source.VpcID
 
 	if !analysis.AreInTheSameVpc {
 		analysis.ConnectionBetweenVPCsIsValid = checkIfVPCConnectionValid(routeSource, routeDestination)
@@ -59,7 +62,7 @@ func RunAnalysis(data scanner.AwsData, client *ec2.Client, port int32) (*Analysi
 }
 
 //TODO: error handling instead of fatals
-func checkIfVPCConnectionIsActive(routeSource *types.Route, client *ec2.Client) *Check {
+func checkIfVPCConnectionIsActive(routeSource types.Route, client *ec2.Client) *Check {
 	if routeSource.VpcPeeringConnectionId != nil {
 		vpcQuery := &ec2.DescribeVpcPeeringConnectionsInput{
 			VpcPeeringConnectionIds: []string{*routeSource.VpcPeeringConnectionId},
@@ -118,7 +121,7 @@ func checkIfVPCConnectionIsActive(routeSource *types.Route, client *ec2.Client) 
 	}
 }
 
-func checkIfVPCConnectionValid(sourceRoute *types.Route, destRoute *types.Route) *Check {
+func checkIfVPCConnectionValid(sourceRoute types.Route, destRoute types.Route) *Check {
 	if sourceRoute.CarrierGatewayId != nil || destRoute.CarrierGatewayId != nil {
 		log.Warn("route check: CarrierGateway not supported yet")
 		return &Check{false, "CarrierGateway not supported yet"}
@@ -167,7 +170,7 @@ func checkIfVPCConnectionValid(sourceRoute *types.Route, destRoute *types.Route)
 
 //TODO: proper error handling
 //TODO: ipv6 support
-func lookForRouteOutsideSubnet(routeTable *types.RouteTable, ipDestination net.IP) (*Check, *types.Route) {
+func lookForRouteOutsideSubnet(routeTable types.RouteTable, ipDestination net.IP) (*Check, types.Route) {
 	log.Debug("Checking subnet routing table")
 	for _, r := range routeTable.Routes {
 		if r.DestinationCidrBlock != nil {
@@ -185,14 +188,14 @@ func lookForRouteOutsideSubnet(routeTable *types.RouteTable, ipDestination net.I
 				return &Check{
 					IsPassing: true,
 					Reason:    fmt.Sprintf("found route in route table '%s' with range '%s'", *routeTable.RouteTableId, *r.DestinationCidrBlock),
-				}, &r
+				}, r
 			}
 		}
 	}
 	return &Check{
 		IsPassing: false,
 		Reason:    "no route found in routing table allowing traffic",
-	}, nil
+	}, types.Route{}
 }
 
 //TODO: return err and add in proper error handling
@@ -215,16 +218,16 @@ func checkIfSecurityGroupAllowsIngressForIPandPort(securityGroupTo types.Securit
 				}
 			}
 			// User ids cover sestinations like security group
-			log.Debugf("user ids %d", len(ingress.UserIdGroupPairs))
 			if len(ingress.UserIdGroupPairs) > 0 {
+				log.Debugf("found %d security groups matching this port", len(ingress.UserIdGroupPairs))
 				for _, userIDGroup := range ingress.UserIdGroupPairs {
-					log.Debugf("group id %s", *userIDGroup.GroupId)
+					log.Debugf("checking if security group id %s matches", *userIDGroup.GroupId)
 					// check if this group id is security group
 					if strings.HasPrefix(*userIDGroup.GroupId, "sg-") {
 						if strings.EqualFold(*userIDGroup.GroupId, securityGroupFromID) {
 							return &Check{
 								IsPassing: true,
-								Reason:    fmt.Sprintf("found inbound rule pointing tu security group - %s", *userIDGroup.GroupId),
+								Reason:    fmt.Sprintf("found inbound rule pointing to security group - %s", *userIDGroup.GroupId),
 							}
 						}
 					} else {
@@ -239,7 +242,7 @@ func checkIfSecurityGroupAllowsIngressForIPandPort(securityGroupTo types.Securit
 			// IP ranges cover only hardcoded cidr values
 			log.Debugf("ipranges ipv4 %d", len(ingress.IpRanges))
 			for _, ipRange := range ingress.IpRanges {
-				log.Debugf("Checking if security group with '%s'\n", *ipRange.CidrIp)
+				log.Debugf("Checking if security group with '%s' can handle '%s'", *ipRange.CidrIp, ipFrom)
 				_, cidr, err := net.ParseCIDR(*ipRange.CidrIp)
 				if err != nil {
 					log.Fatalf("%s", err)
@@ -305,7 +308,7 @@ func checkIfSecurityGroupAllowsEgressForIPandPort(securityGroupFrom types.Securi
 			// IP ranges cover only hardcoded cidr values
 			log.Debugf("ipranges ipv4 %d", len(egress.IpRanges))
 			for _, ipRange := range egress.IpRanges {
-				log.Debugf("Checking if security group with '%s'\n", *ipRange.CidrIp)
+				log.Debugf("Checking if security group with '%s' can handle '%s'", *ipRange.CidrIp, ipDestination)
 				_, cidr, err := net.ParseCIDR(*ipRange.CidrIp)
 				if err != nil {
 					log.Fatalf("%s", err)

@@ -23,12 +23,12 @@ func TestInvalidIPsReturnFalse(t *testing.T) {
 func TestValidIPsReturnTrue(t *testing.T) {
 
 	validIPs := []string{
-		"0.0.0.0",          // this is valid IP - TODO: but maybe we should not allow it?
+		"0.0.0.0", // this is valid IP - TODO: but maybe we should not allow it?
 		"255.255.255.255",
 		"192.168.0.1",
 	}
 
-	for _, ip := range validIPs{
+	for _, ip := range validIPs {
 		//TODO: remove fmt priints from ValidateIP so that we can remove paramName from here and simplify the function
 		result := ArgValidator.ValidateIP(ip, "")
 		assert.True(t, result)

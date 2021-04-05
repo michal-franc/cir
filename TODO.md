@@ -6,7 +6,6 @@ TODO to ISSUES (maybe in order):
 - [ ] handle multiple security groups
   - security group rule check - dont stop on one match - check if more rules match and display them
 - [ ] handle multiple route tables
-      
 - [ ] TGW: attachements instead of just checking if TGW is enabled
  
 // New Features 
@@ -28,6 +27,10 @@ TODO to ISSUES (maybe in order):
     
 - if one ec2 not found then do analysis for only one side
   if port not specified create a list of ports that would be able to be sent through
+  
+// Improvemenets
+- [ ] scanner: dont query the same resource twice - use caching
+- [ ] analysed: dont analyse the same securitygroup, routetable twice - use caching
  
 // New checks 
 - [ ] cir ec2.aws -> if 0.0.0.0/0 enabled - yes

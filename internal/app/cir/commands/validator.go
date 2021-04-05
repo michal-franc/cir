@@ -5,10 +5,13 @@ import (
 	"net"
 )
 
+// Validator - used to validate arguments
 type Validator struct{}
 
+// ArgValidator - global instance of validator
 var ArgValidator = &Validator{}
 
+// ValidateIP - validates IP - will only return true if correct IPV4
 func (*Validator) ValidateIP(ip string, paramName string) bool {
 	parsedIP := net.ParseIP(ip)
 	if parsedIP == nil {
