@@ -36,7 +36,7 @@ func PrintAnalysis(analysis analyser.Analysis, detailed bool) {
 		return
 	}
 
-	tml.Printf("<yellow>Check if %s can reach %s</yellow>\n", analysis.SourceID, analysis.DestinationID)
+	tml.Printf("<yellow>Check if %s can reach %s on port %d</yellow>\n", analysis.SourceID, analysis.DestinationID, analysis.DestinationPort)
 	tml.Println("<yellow>---------------------------</yellow>")
 
 	if analysis.AreInTheSameVpc {

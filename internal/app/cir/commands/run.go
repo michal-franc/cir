@@ -60,7 +60,6 @@ var startCmd = &cobra.Command{
 		}
 
 		log.SetLevel(log.WarnLevel)
-		fmt.Printf("checking if '%s' can reach '%s on port '%d'\n", sourceQuery, destinationQuery, port)
 
 		if debug {
 			log.SetLevel(log.DebugLevel)

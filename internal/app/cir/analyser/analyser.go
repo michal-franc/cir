@@ -21,6 +21,7 @@ type Check struct {
 type Analysis struct {
 	SourceID                      string
 	DestinationID                 string
+	DestinationPort               int32
 	CanEscapeSource               *Check
 	CanEnterDestination           *Check
 	SourceSubnetHasRoute          *Check
@@ -53,8 +54,9 @@ func RunAnalysis(data scanner.AwsData, client *ec2.Client, port int32) ([]Analys
 			ipDestination := net.ParseIP(destination.PrivateIP)
 			ipSource := net.ParseIP(source.PrivateIP)
 			analysis := &Analysis{
-				SourceID:      source.ID,
-				DestinationID: destination.ID,
+				SourceID:        source.ID,
+				DestinationID:   destination.ID,
+				DestinationPort: port,
 			}
 			analysis.CanEscapeSource = checkIfSecurityGroupAllowsEgressForIPandPort(source.SecurityGroup, *destination.SecurityGroup.GroupId, port, ipDestination)
 
