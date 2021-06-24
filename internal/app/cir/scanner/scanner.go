@@ -104,7 +104,9 @@ func findEC2s(query string, client *ec2.Client) ([]types.Instance, error) {
 		filterName = "tag:Name"
 		filterValue = query[5:]
 	} else {
-		return nil, fmt.Errorf("query %s not supported", query)
+		// just assume that by default we do search by IP
+		filterName = "network-interface.addresses.private-ip-address"
+		filterValue = query
 	}
 	queryEc2 := &ec2.DescribeInstancesInput{
 		Filters: []types.Filter{
