@@ -73,6 +73,15 @@ func RunAnalysis(data scanner.AwsData, client *ec2.Client, port int32) ([]Analys
 			if !analysis.AreInTheSameVpc {
 				analysis.ConnectionBetweenVPCsIsValid = checkIfVPCConnectionValid(routeSource, routeDestination)
 				analysis.ConnectionBetweenVPCsIsActive = checkIfVPCConnectionIsActive(routeSource, client)
+			} else {
+				analysis.ConnectionBetweenVPCsIsValid = &Check{
+					IsPassing: true,
+					Reason:    "same vpc",
+				}
+				analysis.ConnectionBetweenVPCsIsActive = &Check{
+					IsPassing: true,
+					Reason:    "same vpc",
+				}
 			}
 
 			*listOfAnalysis = append(*listOfAnalysis, *analysis)
